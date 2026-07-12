@@ -1001,6 +1001,16 @@ a {
   bottom: 96px;
 }
 
+.viewer-card:fullscreen .focus-helper-panel,
+.viewer-card.fullscreen-active .focus-helper-panel {
+  z-index: 22;
+  top: 84px;
+  bottom: auto;
+  left: calc((100% - min(390px, 44vw)) / 2);
+  width: min(320px, calc(100% - min(390px, 44vw) - 40px));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+
 .tool-group {
   padding-top: 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -1897,6 +1907,13 @@ footer {
   .viewer-card:fullscreen .stage-badge,
   .viewer-card.fullscreen-active .stage-badge {
     bottom: calc(42vh + 94px);
+  }
+
+  .viewer-card:fullscreen .focus-helper-panel,
+  .viewer-card.fullscreen-active .focus-helper-panel {
+    top: 62px;
+    left: 50%;
+    width: min(300px, calc(100% - 32px));
   }
 
   .label-form {
