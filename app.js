@@ -1,36 +1,5 @@
 "use strict";
 
-const missions = {
-  leaf: {
-    title: "Leaf detective",
-    icon: "🍃",
-    tag: "PLANT POWER",
-    prompt: "Can you find the tiny doors that help a leaf breathe?",
-    wonder: "Are all the cells the same shape?",
-  },
-  fabric: {
-    title: "Fabric finder",
-    icon: "🧵",
-    tag: "MATERIAL MYSTERY",
-    prompt: "Compare two fabrics. Which one has the twistiest fibres?",
-    wonder: "Why are some threads smooth and others fuzzy?",
-  },
-  crumb: {
-    title: "Mystery crumb",
-    icon: "🥨",
-    tag: "FOOD SCIENCE",
-    prompt: "Investigate a tiny crumb without tasting the evidence!",
-    wonder: "Can you spot crystals, bubbles, or grains?",
-  },
-  water: {
-    title: "Pond patrol",
-    icon: "💧",
-    tag: "MICRO LIFE",
-    prompt: "Place one safe pond-water drop on a slide and watch patiently.",
-    wonder: "Does anything wiggle, spin, or change direction?",
-  },
-};
-
 const videoFilters = {
   natural: "none",
   contrast: "contrast(1.5) saturate(1.18)",
@@ -50,14 +19,13 @@ const qualityProfiles = [
 
 const state = {
   stream: null,
-  activeMission: "leaf",
   filter: "natural",
   zoom: 1,
   torchSupported: false,
   lightOn: false,
   explorerName: "",
   snapshots: [],
-  xp: 0,
+  pendingSnapshot: null,
   toastTimer: null,
 };
 
@@ -86,11 +54,11 @@ const snapshotGrid = $("#snapshotGrid");
 const snapshotEmpty = $("#snapshotEmpty");
 const clearSnapshotsButton = $("#clearSnapshotsButton");
 const downloadPdfButton = $("#downloadPdfButton");
+const labelDialog = $("#labelDialog");
+const labelForm = $("#labelForm");
+const labelInput = $("#snapshotLabel");
+const labelPreview = $("#labelPreview");
 const toast = $("#toast");
-const confettiLayer = $("#confettiLayer");
-const xpCount = $("#xpCount");
-const observationNote = $("#observationNote");
-const noteCount = $("#noteCount");
 
 function showToast(message) {
   window.clearTimeout(state.toastTimer);
@@ -102,11 +70,6 @@ function showToast(message) {
 function setConnection(stateName, message) {
   connectionPill.dataset.state = stateName;
   connectionText.textContent = message;
-}
-
-function addXp(points) {
-  state.xp += points;
-  xpCount.textContent = String(state.xp);
 }
 
 function resetLightControl(message = "Connect a camera to check for LED control.") {
@@ -358,8 +321,6 @@ async function connectCamera(deviceId = "") {
     } else {
       showToast(`Lens online at ${width} × ${height}.`);
     }
-    addXp(5);
-
     track.addEventListener("ended", () => {
       viewerCard.classList.remove("is-live");
       captureButton.disabled = true;
@@ -449,16 +410,57 @@ async function captureDiscovery() {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
     url: URL.createObjectURL(blob),
     time: new Date(),
-    mission: missions[state.activeMission].title,
-    note: observationNote.value.trim(),
+    label: "",
   };
 
-  state.snapshots.unshift(snapshot);
+  requestSnapshotLabel(snapshot);
+}
+
+function requestSnapshotLabel(snapshot) {
+  state.pendingSnapshot = snapshot;
+  labelPreview.src = snapshot.url;
+  labelInput.value = "";
+  labelInput.setCustomValidity("");
+
+  if (typeof labelDialog.showModal === "function") {
+    labelDialog.showModal();
+    window.setTimeout(() => labelInput.focus(), 0);
+    return;
+  }
+
+  const response = window.prompt("Label your snapshot:", "");
+  if (response?.trim()) {
+    savePendingSnapshot(response);
+  } else {
+    discardPendingSnapshot();
+  }
+}
+
+function cameraIsLive() {
+  return Boolean(state.stream?.getVideoTracks().some((track) => track.readyState === "live"));
+}
+
+function finishLabelStep() {
+  labelPreview.removeAttribute("src");
+  if (labelDialog.open) labelDialog.close();
+  captureButton.disabled = !cameraIsLive();
+}
+
+function savePendingSnapshot(label) {
+  if (!state.pendingSnapshot) return;
+  state.pendingSnapshot.label = label.trim().replace(/\s+/g, " ");
+  state.snapshots.unshift(state.pendingSnapshot);
+  state.pendingSnapshot = null;
+  finishLabelStep();
   renderSnapshots();
-  celebrate();
-  addXp(10);
-  showToast("Discovery captured! +10 explorer points");
-  captureButton.disabled = false;
+  showToast("Discovery labelled and saved to your reel.");
+}
+
+function discardPendingSnapshot() {
+  if (state.pendingSnapshot) URL.revokeObjectURL(state.pendingSnapshot.url);
+  state.pendingSnapshot = null;
+  finishLabelStep();
+  showToast("Ready for another look through the lens.");
 }
 
 function snapshotCard(snapshot, index) {
@@ -471,7 +473,7 @@ function snapshotCard(snapshot, index) {
 
   const image = document.createElement("img");
   image.src = snapshot.url;
-  image.alt = `${snapshot.mission} microscope discovery`;
+  image.alt = `${snapshot.label} microscope discovery`;
 
   const badge = document.createElement("span");
   badge.className = "snapshot-index";
@@ -483,9 +485,9 @@ function snapshotCard(snapshot, index) {
 
   const copy = document.createElement("div");
   const title = document.createElement("strong");
-  title.textContent = snapshot.mission;
+  title.textContent = snapshot.label;
   const meta = document.createElement("small");
-  meta.textContent = snapshot.note || snapshot.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  meta.textContent = snapshot.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   copy.append(title, meta);
 
   const actions = document.createElement("div");
@@ -493,15 +495,15 @@ function snapshotCard(snapshot, index) {
 
   const download = document.createElement("a");
   download.href = snapshot.url;
-  download.download = `micro-quest-${snapshot.id}.jpg`;
-  download.setAttribute("aria-label", `Download ${snapshot.mission} snapshot`);
+  download.download = `${safeSnapshotFilename(snapshot.label)}-${snapshot.id}.jpg`;
+  download.setAttribute("aria-label", `Download ${snapshot.label} snapshot`);
   download.title = "Download snapshot";
   download.textContent = "↓";
 
   const remove = document.createElement("button");
   remove.type = "button";
   remove.dataset.deleteSnapshot = snapshot.id;
-  remove.setAttribute("aria-label", `Delete ${snapshot.mission} snapshot`);
+  remove.setAttribute("aria-label", `Delete ${snapshot.label} snapshot`);
   remove.title = "Delete snapshot";
   remove.textContent = "×";
 
@@ -509,6 +511,15 @@ function snapshotCard(snapshot, index) {
   info.append(copy, actions);
   card.append(imageWrap, info);
   return card;
+}
+
+function safeSnapshotFilename(label) {
+  return label
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "micro-discovery";
 }
 
 function renderSnapshots() {
@@ -536,33 +547,6 @@ function roundedRectPath(context, x, y, width, height, radius) {
   context.arcTo(x, y + height, x, y, safeRadius);
   context.arcTo(x, y, x + width, y, safeRadius);
   context.closePath();
-}
-
-function wrappedLines(context, text, maxWidth, maxLines = Infinity) {
-  const words = String(text).trim().split(/\s+/).filter(Boolean);
-  const lines = [];
-  let line = "";
-
-  words.forEach((word) => {
-    const candidate = line ? `${line} ${word}` : word;
-    if (line && context.measureText(candidate).width > maxWidth) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = candidate;
-    }
-  });
-
-  if (line) lines.push(line);
-  if (lines.length <= maxLines) return lines;
-
-  const visible = lines.slice(0, maxLines);
-  let finalLine = visible[maxLines - 1];
-  while (finalLine && context.measureText(`${finalLine}…`).width > maxWidth) {
-    finalLine = finalLine.slice(0, -1).trimEnd();
-  }
-  visible[maxLines - 1] = `${finalLine}…`;
-  return visible;
 }
 
 function loadSnapshotImage(url) {
@@ -614,8 +598,17 @@ async function drawDiscoveryCard(context, snapshot, discoveryNumber, y) {
 
   const infoY = y + imageHeight;
   context.fillStyle = "#071b33";
-  context.font = '800 28px "Arial", sans-serif';
-  context.fillText(snapshot.mission, x + 34, infoY + 48);
+  let labelFontSize = 28;
+  context.font = `800 ${labelFontSize}px "Arial", sans-serif`;
+  while (labelFontSize > 20 && context.measureText(snapshot.label).width > 650) {
+    labelFontSize -= 1;
+    context.font = `800 ${labelFontSize}px "Arial", sans-serif`;
+  }
+  let pdfLabel = snapshot.label;
+  while (pdfLabel.length > 1 && context.measureText(pdfLabel).width > 650) {
+    pdfLabel = `${pdfLabel.slice(0, -2).trimEnd()}…`;
+  }
+  context.fillText(pdfLabel, x + 34, infoY + 48);
 
   context.fillStyle = "#77869a";
   context.font = '600 18px "Arial", sans-serif';
@@ -634,10 +627,7 @@ async function drawDiscoveryCard(context, snapshot, discoveryNumber, y) {
 
   context.fillStyle = "#46566a";
   context.font = '500 22px "Arial", sans-serif';
-  const note = snapshot.note || "A tiny-world discovery captured through the microscope.";
-  wrappedLines(context, note, width - 68, 2).forEach((line, index) => {
-    context.fillText(line, x + 34, infoY + 91 + (index * 30));
-  });
+  context.fillText("Captured through the microscope", x + 34, infoY + 91);
 }
 
 function canvasAsJpeg(canvas) {
@@ -860,7 +850,7 @@ async function downloadDiscoveryPdf() {
     showToast("The PDF could not be created. Please try again.");
   } finally {
     downloadPdfButton.disabled = false;
-    setPdfButtonLabel("Download PDF", true);
+    setPdfButtonLabel("Export PDF", true);
   }
 }
 
@@ -876,70 +866,6 @@ function clearSnapshots() {
   state.snapshots = [];
   renderSnapshots();
   showToast("Discovery reel cleared for a fresh expedition.");
-}
-
-function celebrate() {
-  const colors = ["#5ff2d6", "#ffd166", "#ff6b9d", "#7657ff", "#63c9ff"];
-  for (let index = 0; index < 24; index += 1) {
-    const piece = document.createElement("span");
-    piece.className = "confetti-piece";
-    piece.style.setProperty("--x", `${Math.random() * 100}%`);
-    piece.style.setProperty("--size", `${7 + Math.random() * 8}px`);
-    piece.style.setProperty("--color", colors[index % colors.length]);
-    piece.style.setProperty("--speed", `${1.7 + Math.random() * 1.2}s`);
-    piece.style.setProperty("--rotation", `${Math.random() * 180}deg`);
-    piece.style.setProperty("--drift", `${-80 + Math.random() * 160}px`);
-    confettiLayer.append(piece);
-    piece.addEventListener("animationend", () => piece.remove(), { once: true });
-  }
-}
-
-function selectMission(key) {
-  const mission = missions[key];
-  if (!mission) return;
-
-  saveCurrentNote();
-  state.activeMission = key;
-  $("#quest-heading").textContent = mission.title;
-  $("#questIcon").textContent = mission.icon;
-  $("#questTag").textContent = mission.tag;
-  $("#questPrompt").textContent = mission.prompt;
-  $("#wonderQuestion").textContent = mission.wonder;
-
-  $$(".mission").forEach((button) => {
-    const active = button.dataset.mission === key;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-pressed", String(active));
-  });
-
-  observationNote.value = readSavedNote(key);
-  updateNoteCount();
-  showToast(`${mission.title} mission selected.`);
-}
-
-function noteStorageKey(key = state.activeMission) {
-  return `micro-quest-note-${key}`;
-}
-
-function readSavedNote(key) {
-  try {
-    return localStorage.getItem(noteStorageKey(key)) || "";
-  } catch {
-    return "";
-  }
-}
-
-function saveCurrentNote() {
-  try {
-    localStorage.setItem(noteStorageKey(), observationNote.value.trim());
-  } catch {
-    return false;
-  }
-  return true;
-}
-
-function updateNoteCount() {
-  noteCount.textContent = String(observationNote.value.length);
 }
 
 async function openFullscreen() {
@@ -968,22 +894,23 @@ $$(".filter-chip").forEach((button) => {
   button.addEventListener("click", () => selectFilter(button.dataset.filter));
 });
 
-$$(".mission").forEach((button) => {
-  button.addEventListener("click", () => selectMission(button.dataset.mission));
+labelForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const label = labelInput.value.trim().replace(/\s+/g, " ");
+  if (!label) {
+    labelInput.setCustomValidity("Give your discovery a label first.");
+    labelInput.reportValidity();
+    return;
+  }
+  labelInput.setCustomValidity("");
+  savePendingSnapshot(label);
 });
 
-observationNote.addEventListener("input", updateNoteCount);
-$("#saveNoteButton").addEventListener("click", () => {
-  const saved = saveCurrentNote();
-  showToast(saved ? "Field note tucked safely into this browser." : "This browser could not save the note.");
-  if (saved) addXp(2);
-});
-
-$("#completeQuestButton").addEventListener("click", () => {
-  saveCurrentNote();
-  addXp(25);
-  celebrate();
-  showToast(`${missions[state.activeMission].title} complete! +25 explorer points`);
+labelInput.addEventListener("input", () => labelInput.setCustomValidity(""));
+$("#retakeButton").addEventListener("click", discardPendingSnapshot);
+labelDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  discardPendingSnapshot();
 });
 
 snapshotGrid.addEventListener("click", (event) => {
@@ -1005,12 +932,11 @@ if (navigator.mediaDevices?.addEventListener) {
 window.addEventListener("pagehide", () => {
   stopStream();
   state.snapshots.forEach((snapshot) => URL.revokeObjectURL(snapshot.url));
+  if (state.pendingSnapshot) URL.revokeObjectURL(state.pendingSnapshot.url);
 });
 
 setZoom(1);
 selectFilter("natural");
-observationNote.value = readSavedNote("leaf");
-updateNoteCount();
 
 if (!window.isSecureContext) {
   setConnection("error", "Preview only");
