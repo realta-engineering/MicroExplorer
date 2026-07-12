@@ -7,6 +7,12 @@ const videoFilters = {
   invert: "invert(1) hue-rotate(180deg)",
 };
 
+const videoFilterLabels = {
+  contrast: "Contrast+ view",
+  mono: "B&W view",
+  invert: "Inverted view",
+};
+
 const organizerStorageKey = "microexplorer-organizer";
 
 const qualityProfiles = [
@@ -788,6 +794,7 @@ async function captureDiscovery() {
     time: new Date(),
     label: "",
     enhancements: [
+      ...(videoFilterLabels[state.filter] ? [videoFilterLabels[state.filter]] : []),
       ...(state.autoEnhance ? ["Auto enhanced"] : []),
       ...(state.edgeHighlight ? ["Edge highlight"] : []),
     ],
