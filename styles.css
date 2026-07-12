@@ -924,6 +924,83 @@ a {
   padding: 2px 20px 22px;
 }
 
+/* Keep processing and capture controls available over the fullscreen image. */
+.viewer-card:fullscreen,
+.viewer-card.fullscreen-active {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #020b14;
+}
+
+.viewer-card:fullscreen .stage,
+.viewer-card.fullscreen-active .stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+.viewer-card:fullscreen .viewer-topline,
+.viewer-card.fullscreen-active .viewer-topline {
+  position: absolute;
+  z-index: 20;
+  top: 14px;
+  right: 14px;
+  left: 14px;
+  min-height: 52px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 15px;
+  background: rgba(2, 11, 20, 0.78);
+  backdrop-filter: blur(14px);
+}
+
+.viewer-card:fullscreen .main-controls,
+.viewer-card.fullscreen-active .main-controls {
+  position: absolute;
+  z-index: 21;
+  right: min(390px, 44vw);
+  bottom: 14px;
+  left: 14px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 17px;
+  background: rgba(2, 11, 20, 0.78);
+  backdrop-filter: blur(14px);
+}
+
+.viewer-card:fullscreen .viewer-tools,
+.viewer-card.fullscreen-active .viewer-tools {
+  position: absolute;
+  z-index: 20;
+  top: 80px;
+  right: 14px;
+  bottom: 14px;
+  width: min(360px, calc(44vw - 28px));
+  display: block;
+  overflow: auto;
+  padding: 4px 16px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 17px;
+  background: rgba(2, 11, 20, 0.78);
+  backdrop-filter: blur(14px);
+  scrollbar-width: thin;
+}
+
+.viewer-card:fullscreen .tool-group,
+.viewer-card.fullscreen-active .tool-group {
+  padding-block: 14px 4px;
+}
+
+.viewer-card:fullscreen .stage-badge,
+.viewer-card.fullscreen-active .stage-badge {
+  bottom: 96px;
+}
+
 .tool-group {
   padding-top: 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -1779,6 +1856,47 @@ footer {
 
   .viewer-tools {
     grid-template-columns: 1fr;
+  }
+
+  .viewer-card:fullscreen .viewer-topline,
+  .viewer-card.fullscreen-active .viewer-topline {
+    top: 8px;
+    right: 8px;
+    left: 8px;
+    min-height: 0;
+    padding: 9px 11px;
+  }
+
+  .viewer-card:fullscreen .camera-picker,
+  .viewer-card.fullscreen-active .camera-picker,
+  .viewer-card:fullscreen .button-connect,
+  .viewer-card.fullscreen-active .button-connect {
+    display: none;
+  }
+
+  .viewer-card:fullscreen .main-controls,
+  .viewer-card.fullscreen-active .main-controls {
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    grid-template-columns: 1fr 52px;
+    padding: 7px;
+  }
+
+  .viewer-card:fullscreen .viewer-tools,
+  .viewer-card.fullscreen-active .viewer-tools {
+    top: auto;
+    right: 8px;
+    bottom: 82px;
+    left: 8px;
+    width: auto;
+    max-height: 42vh;
+    padding: 0 13px 12px;
+  }
+
+  .viewer-card:fullscreen .stage-badge,
+  .viewer-card.fullscreen-active .stage-badge {
+    bottom: calc(42vh + 94px);
   }
 
   .label-form {

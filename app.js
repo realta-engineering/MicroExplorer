@@ -1430,12 +1430,17 @@ function clearSnapshots() {
 }
 
 async function openFullscreen() {
-  const stage = $("#stage");
   try {
-    if (stage.requestFullscreen) {
-      await stage.requestFullscreen();
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } else if (viewerCard.requestFullscreen) {
+      await viewerCard.requestFullscreen();
+    } else if (viewerCard.webkitRequestFullscreen) {
+      viewerCard.webkitRequestFullscreen();
     } else if (video.webkitEnterFullscreen) {
       video.webkitEnterFullscreen();
+      showToast("This browser uses its own video fullscreen controls.");
     } else {
       showToast("Fullscreen is not available in this browser.");
     }
@@ -1444,10 +1449,23 @@ async function openFullscreen() {
   }
 }
 
+function updateFullscreenControls() {
+  const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+  const isFullscreen = fullscreenElement === viewerCard;
+  viewerCard.classList.toggle("fullscreen-active", isFullscreen);
+  fullscreenButton.setAttribute("aria-label", isFullscreen
+    ? "Exit microscope fullscreen view"
+    : "Open microscope view fullscreen");
+  fullscreenButton.title = isFullscreen ? "Exit fullscreen" : "Fullscreen view";
+  fullscreenButton.querySelector("span").textContent = isFullscreen ? "×" : "⛶";
+}
+
 connectButton.addEventListener("click", () => connectCamera(cameraSelect.value));
 cameraSelect.addEventListener("change", () => connectCamera(cameraSelect.value));
 captureButton.addEventListener("click", captureDiscovery);
 fullscreenButton.addEventListener("click", openFullscreen);
+document.addEventListener("fullscreenchange", updateFullscreenControls);
+document.addEventListener("webkitfullscreenchange", updateFullscreenControls);
 zoomSlider.addEventListener("input", (event) => setZoom(event.target.value));
 focusHelperButton.addEventListener("click", toggleFocusHelper);
 autoEnhanceButton.addEventListener("click", toggleAutoEnhance);
