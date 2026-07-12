@@ -131,6 +131,14 @@
                   <span class="guide-ring"></span>
                 </div>
 
+                <div class="focus-helper-panel" id="focusHelperPanel" data-state="checking" hidden>
+                  <div class="focus-helper-copy">
+                    <span aria-hidden="true">◎</span>
+                    <strong id="focusStatus">Checking focus…</strong>
+                  </div>
+                  <div class="focus-meter" aria-hidden="true"><span id="focusMeterFill"></span></div>
+                </div>
+
                 <div class="stage-badge stage-badge-left" id="zoomReadout">1.0×</div>
                 <div class="stage-badge stage-badge-right" id="resolutionReadout">READY TO EXPLORE</div>
               </div>
@@ -183,6 +191,19 @@
                     <button type="button" class="filter-chip" data-filter="invert" aria-pressed="false">Invert</button>
                   </div>
                   <small>Filters change the view, not the specimen.</small>
+                </div>
+
+                <div class="tool-group assist-tool">
+                  <span class="tool-label"><span aria-hidden="true">✦</span> Discovery helpers</span>
+                  <div class="assist-buttons">
+                    <button type="button" class="assist-toggle" id="focusHelperButton" aria-pressed="false" disabled>
+                      <span aria-hidden="true">◎</span> Focus helper
+                    </button>
+                    <button type="button" class="assist-toggle" id="autoEnhanceButton" aria-pressed="false" disabled>
+                      <span aria-hidden="true">✨</span> Auto enhance
+                    </button>
+                  </div>
+                  <small id="assistTip" role="status">Connect the microscope to use discovery helpers.</small>
                 </div>
               </div>
             </article>

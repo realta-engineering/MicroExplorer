@@ -21,6 +21,15 @@ const state = {
   stream: null,
   filter: "natural",
   zoom: 1,
+  autoEnhance: false,
+  autoEnhanceFilter: "none",
+  focusHelper: false,
+  focusFrame: null,
+  focusLastSample: 0,
+  focusSamples: 0,
+  focusScore: 0,
+  focusBest: 0,
+  focusMin: Infinity,
   explorerName: "",
   snapshots: [],
   pendingSnapshot: null,
@@ -44,6 +53,12 @@ const resolutionReadout = $("#resolutionReadout");
 const zoomSlider = $("#zoomSlider");
 const zoomOutput = $("#zoomOutput");
 const zoomReadout = $("#zoomReadout");
+const focusHelperButton = $("#focusHelperButton");
+const autoEnhanceButton = $("#autoEnhanceButton");
+const focusHelperPanel = $("#focusHelperPanel");
+const focusStatus = $("#focusStatus");
+const focusMeterFill = $("#focusMeterFill");
+const assistTip = $("#assistTip");
 const canvas = $("#captureCanvas");
 const snapshotGrid = $("#snapshotGrid");
 const snapshotEmpty = $("#snapshotEmpty");
@@ -54,6 +69,10 @@ const labelForm = $("#labelForm");
 const labelInput = $("#snapshotLabel");
 const labelPreview = $("#labelPreview");
 const toast = $("#toast");
+const analysisCanvas = document.createElement("canvas");
+analysisCanvas.width = 160;
+analysisCanvas.height = 120;
+const analysisContext = analysisCanvas.getContext("2d", { willReadFrequently: true });
 
 function showToast(message) {
   window.clearTimeout(state.toastTimer);
@@ -69,6 +88,7 @@ function setConnection(stateName, message) {
 
 function stopStream() {
   if (!state.stream) return;
+  resetProcessingTools();
   state.stream.getTracks().forEach((track) => track.stop());
   state.stream = null;
   video.srcObject = null;
@@ -243,6 +263,9 @@ async function connectCamera(deviceId = "") {
     resolutionReadout.textContent = width && height ? `${width} × ${height}` : "LENS ONLINE";
     captureButton.disabled = false;
     fullscreenButton.disabled = false;
+    focusHelperButton.disabled = false;
+    autoEnhanceButton.disabled = false;
+    assistTip.textContent = "Focus guidance and enhancement are optional and reversible.";
     connectButtonText.textContent = "Reconnect microscope";
     setConnection("live", "Lens online");
     await populateCameraList(settings.deviceId);
@@ -257,6 +280,7 @@ async function connectCamera(deviceId = "") {
       viewerCard.classList.remove("is-live");
       captureButton.disabled = true;
       fullscreenButton.disabled = true;
+      resetProcessingTools();
       liveLabel.textContent = "STANDBY";
       resolutionReadout.textContent = "CAMERA DISCONNECTED";
       setConnection("idle", "Camera resting");
@@ -266,6 +290,7 @@ async function connectCamera(deviceId = "") {
     viewerCard.classList.remove("is-live");
     captureButton.disabled = true;
     fullscreenButton.disabled = true;
+    resetProcessingTools();
     liveLabel.textContent = "STANDBY";
     resolutionReadout.textContent = "CHECK CONNECTION";
     setConnection("error", "Needs attention");
@@ -283,16 +308,255 @@ function setZoom(value) {
   zoomOutput.value = label;
   zoomOutput.textContent = label;
   zoomReadout.textContent = label;
+  resetFocusCalibration();
+}
+
+function activeVideoFilter() {
+  const filters = [videoFilters[state.filter]];
+  if (state.autoEnhance) filters.push(state.autoEnhanceFilter);
+  const activeFilters = filters.filter((filter) => filter && filter !== "none");
+  return activeFilters.join(" ") || "none";
+}
+
+function applyVideoProcessing() {
+  video.style.filter = activeVideoFilter();
 }
 
 function selectFilter(name) {
   state.filter = name;
-  video.style.filter = videoFilters[name];
+  applyVideoProcessing();
   $$(".filter-chip").forEach((button) => {
     const active = button.dataset.filter === name;
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
+}
+
+function drawAnalysisFrame() {
+  if (!video.videoWidth || !video.videoHeight) return null;
+
+  let sourceWidth = video.videoWidth / state.zoom;
+  let sourceHeight = video.videoHeight / state.zoom;
+  const targetAspect = analysisCanvas.width / analysisCanvas.height;
+  const sourceAspect = sourceWidth / sourceHeight;
+
+  if (sourceAspect > targetAspect) sourceWidth = sourceHeight * targetAspect;
+  else sourceHeight = sourceWidth / targetAspect;
+
+  const sourceX = (video.videoWidth - sourceWidth) / 2;
+  const sourceY = (video.videoHeight - sourceHeight) / 2;
+  analysisContext.filter = "none";
+  analysisContext.drawImage(
+    video,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    analysisCanvas.width,
+    analysisCanvas.height,
+  );
+  return analysisContext.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
+}
+
+function focusMetrics() {
+  const imageData = drawAnalysisFrame();
+  if (!imageData) return null;
+
+  const { data } = imageData;
+  const width = analysisCanvas.width;
+  const height = analysisCanvas.height;
+  const gray = new Float32Array(width * height);
+  let brightnessTotal = 0;
+  let brightnessSquaredTotal = 0;
+
+  for (let index = 0; index < gray.length; index += 1) {
+    const offset = index * 4;
+    const value = (data[offset] * 0.299) + (data[offset + 1] * 0.587) + (data[offset + 2] * 0.114);
+    gray[index] = value;
+    brightnessTotal += value;
+    brightnessSquaredTotal += value * value;
+  }
+
+  let laplacianSquaredTotal = 0;
+  let laplacianCount = 0;
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = (y * width) + x;
+      const laplacian = (gray[index] * 4)
+        - gray[index - 1]
+        - gray[index + 1]
+        - gray[index - width]
+        - gray[index + width];
+      laplacianSquaredTotal += laplacian * laplacian;
+      laplacianCount += 1;
+    }
+  }
+
+  const mean = brightnessTotal / gray.length;
+  const detail = Math.max(0, (brightnessSquaredTotal / gray.length) - (mean * mean));
+  const sharpness = Math.log1p(laplacianSquaredTotal / laplacianCount);
+  return { detail, sharpness };
+}
+
+function resetFocusCalibration() {
+  state.focusLastSample = 0;
+  state.focusSamples = 0;
+  state.focusScore = 0;
+  state.focusBest = 0;
+  state.focusMin = Infinity;
+  focusHelperPanel.dataset.state = "checking";
+  focusStatus.textContent = "Checking focus…";
+  focusMeterFill.style.width = "0%";
+}
+
+function updateFocusFeedback(metrics) {
+  state.focusSamples += 1;
+  state.focusScore = state.focusSamples === 1
+    ? metrics.sharpness
+    : (state.focusScore * 0.72) + (metrics.sharpness * 0.28);
+  state.focusBest = Math.max(state.focusScore, state.focusBest * 0.999);
+  state.focusMin = Math.min(state.focusMin, state.focusScore);
+
+  if (metrics.detail < 35) {
+    focusHelperPanel.dataset.state = "searching";
+    focusStatus.textContent = "Find a detailed area";
+    focusMeterFill.style.width = "12%";
+    return;
+  }
+
+  if (state.focusSamples < 6) {
+    focusHelperPanel.dataset.state = "checking";
+    focusStatus.textContent = "Checking focus…";
+    focusMeterFill.style.width = `${Math.min(60, state.focusSamples * 10)}%`;
+    return;
+  }
+
+  if (state.focusBest - state.focusMin < 0.1) {
+    focusHelperPanel.dataset.state = "adjusting";
+    focusStatus.textContent = "Turn the wheel to compare";
+    focusMeterFill.style.width = "48%";
+    return;
+  }
+
+  const focusRatio = state.focusBest ? state.focusScore / state.focusBest : 0;
+  focusMeterFill.style.width = `${Math.max(18, Math.min(100, focusRatio * 100))}%`;
+  if (focusRatio >= 0.93) {
+    focusHelperPanel.dataset.state = "sharp";
+    focusStatus.textContent = "Sharpest view!";
+  } else if (focusRatio >= 0.75) {
+    focusHelperPanel.dataset.state = "close";
+    focusStatus.textContent = "Almost there…";
+  } else {
+    focusHelperPanel.dataset.state = "adjusting";
+    focusStatus.textContent = "Turn the focus wheel slowly";
+  }
+}
+
+function focusLoop(timestamp) {
+  if (!state.focusHelper) return;
+  state.focusFrame = window.requestAnimationFrame(focusLoop);
+  if (timestamp - state.focusLastSample < 160) return;
+  state.focusLastSample = timestamp;
+
+  try {
+    const metrics = focusMetrics();
+    if (metrics) updateFocusFeedback(metrics);
+  } catch {
+    stopFocusHelper();
+    showToast("Focus helper could not read this camera view.");
+  }
+}
+
+function startFocusHelper() {
+  if (!cameraIsLive()) {
+    showToast("Power up the microscope before using focus helper.");
+    return;
+  }
+  state.focusHelper = true;
+  focusHelperButton.setAttribute("aria-pressed", "true");
+  focusHelperPanel.hidden = false;
+  viewerCard.classList.add("focus-helper-active");
+  resetFocusCalibration();
+  state.focusFrame = window.requestAnimationFrame(focusLoop);
+  assistTip.textContent = "Turn the physical focus wheel slowly and watch the sharpness guide.";
+}
+
+function stopFocusHelper() {
+  state.focusHelper = false;
+  if (state.focusFrame !== null) window.cancelAnimationFrame(state.focusFrame);
+  state.focusFrame = null;
+  focusHelperButton.setAttribute("aria-pressed", "false");
+  focusHelperPanel.hidden = true;
+  viewerCard.classList.remove("focus-helper-active");
+}
+
+function toggleFocusHelper() {
+  if (state.focusHelper) {
+    stopFocusHelper();
+    assistTip.textContent = "Focus helper is off. Your microscope view is unchanged.";
+  } else {
+    startFocusHelper();
+  }
+}
+
+function calculateAutoEnhanceFilter() {
+  const imageData = drawAnalysisFrame();
+  if (!imageData) return null;
+  const luminance = [];
+  for (let offset = 0; offset < imageData.data.length; offset += 16) {
+    luminance.push(
+      (imageData.data[offset] * 0.299)
+      + (imageData.data[offset + 1] * 0.587)
+      + (imageData.data[offset + 2] * 0.114),
+    );
+  }
+  luminance.sort((a, b) => a - b);
+  const percentile = (fraction) => luminance[Math.floor((luminance.length - 1) * fraction)];
+  const low = percentile(0.05);
+  const middle = percentile(0.5);
+  const high = percentile(0.95);
+  const contrast = Math.max(1.02, Math.min(1.35, 225 / Math.max(45, high - low)));
+  const brightness = Math.max(0.88, Math.min(1.18, 132 / Math.max(24, middle)));
+  return `brightness(${brightness.toFixed(2)}) contrast(${contrast.toFixed(2)}) saturate(1.08)`;
+}
+
+function toggleAutoEnhance() {
+  if (state.autoEnhance) {
+    state.autoEnhance = false;
+    state.autoEnhanceFilter = "none";
+    autoEnhanceButton.setAttribute("aria-pressed", "false");
+    applyVideoProcessing();
+    assistTip.textContent = "Auto enhance is off. The natural camera image is restored.";
+    showToast("Auto enhance switched off.");
+    return;
+  }
+
+  if (!cameraIsLive()) {
+    showToast("Power up the microscope before using auto enhance.");
+    return;
+  }
+
+  const enhancement = calculateAutoEnhanceFilter();
+  if (!enhancement) return;
+  state.autoEnhance = true;
+  state.autoEnhanceFilter = enhancement;
+  autoEnhanceButton.setAttribute("aria-pressed", "true");
+  applyVideoProcessing();
+  assistTip.textContent = "Brightness and contrast were balanced for the current specimen.";
+  showToast("Auto enhance balanced this microscope view.");
+}
+
+function resetProcessingTools() {
+  stopFocusHelper();
+  state.autoEnhance = false;
+  state.autoEnhanceFilter = "none";
+  autoEnhanceButton.setAttribute("aria-pressed", "false");
+  focusHelperButton.disabled = true;
+  autoEnhanceButton.disabled = true;
+  assistTip.textContent = "Connect the microscope to use discovery helpers.";
+  applyVideoProcessing();
 }
 
 function blobFromCanvas(targetCanvas) {
@@ -316,7 +580,7 @@ async function captureDiscovery() {
   canvas.width = outputWidth;
   canvas.height = outputHeight;
   const context = canvas.getContext("2d", { alpha: false });
-  context.filter = videoFilters[state.filter];
+  context.filter = activeVideoFilter();
   context.drawImage(
     video,
     sourceX,
@@ -818,6 +1082,8 @@ cameraSelect.addEventListener("change", () => connectCamera(cameraSelect.value))
 captureButton.addEventListener("click", captureDiscovery);
 fullscreenButton.addEventListener("click", openFullscreen);
 zoomSlider.addEventListener("input", (event) => setZoom(event.target.value));
+focusHelperButton.addEventListener("click", toggleFocusHelper);
+autoEnhanceButton.addEventListener("click", toggleAutoEnhance);
 
 $$(".filter-chip").forEach((button) => {
   button.addEventListener("click", () => selectFilter(button.dataset.filter));
