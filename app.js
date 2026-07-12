@@ -7,6 +7,8 @@ const videoFilters = {
   invert: "invert(1) hue-rotate(180deg)",
 };
 
+const organizerStorageKey = "microexplorer-organizer";
+
 const qualityProfiles = [
   { width: 2560, height: 1440 },
   { width: 1920, height: 1080 },
@@ -35,6 +37,7 @@ const state = {
   focusBest: 0,
   focusMin: Infinity,
   explorerName: "",
+  organizerName: "",
   snapshots: [],
   pendingSnapshot: null,
   toastTimer: null,
@@ -77,6 +80,12 @@ const labelDialog = $("#labelDialog");
 const labelForm = $("#labelForm");
 const labelInput = $("#snapshotLabel");
 const labelPreview = $("#labelPreview");
+const exportDialog = $("#exportDialog");
+const exportForm = $("#exportForm");
+const exportExplorerName = $("#exportExplorerName");
+const exportOrganizerName = $("#exportOrganizerName");
+const rememberOrganizer = $("#rememberOrganizer");
+const forgetOrganizerButton = $("#forgetOrganizerButton");
 const toast = $("#toast");
 const analysisCanvas = document.createElement("canvas");
 analysisCanvas.width = 160;
@@ -1072,6 +1081,122 @@ async function renderDiscoveryPdfPage(snapshots, pageIndex, pageCount, explorerN
   return new Uint8Array(await jpegBlob.arrayBuffer());
 }
 
+function fittedCanvasFont(context, text, maxWidth, startSize, minSize, weight = 800) {
+  let size = startSize;
+  context.font = `${weight} ${size}px "Arial", sans-serif`;
+  while (size > minSize && context.measureText(text).width > maxWidth) {
+    size -= 1;
+    context.font = `${weight} ${size}px "Arial", sans-serif`;
+  }
+  return size;
+}
+
+async function renderCertificatePdfPage(explorerName, organizerName, pageIndex, pageCount) {
+  const canvasPage = document.createElement("canvas");
+  canvasPage.width = 1240;
+  canvasPage.height = 1754;
+  const context = canvasPage.getContext("2d", { alpha: false });
+
+  context.fillStyle = "#f6f1e7";
+  context.fillRect(0, 0, canvasPage.width, canvasPage.height);
+  context.fillStyle = "#071b33";
+  context.fillRect(0, 0, canvasPage.width, 200);
+
+  context.fillStyle = "rgba(95, 242, 214, 0.14)";
+  context.beginPath();
+  context.arc(1135, 45, 145, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = "rgba(255, 107, 157, 0.18)";
+  context.beginPath();
+  context.arc(100, 1620, 120, 0, Math.PI * 2);
+  context.fill();
+
+  context.strokeStyle = "#7657ff";
+  context.lineWidth = 4;
+  context.setLineDash([14, 12]);
+  roundedRectPath(context, 62, 242, 1116, 1370, 38);
+  context.stroke();
+  context.setLineDash([]);
+
+  context.textAlign = "center";
+  context.fillStyle = "#5ff2d6";
+  context.font = '800 20px "Arial", sans-serif';
+  context.fillText("MICROEXPLORER - CERTIFICATE OF DISCOVERY", 620, 62);
+  context.fillStyle = "#ffffff";
+  context.font = '800 48px "Arial", sans-serif';
+  context.fillText("Tiny discoveries. Big achievement!", 620, 132);
+
+  context.fillStyle = "#e9e4ff";
+  context.beginPath();
+  context.arc(620, 375, 92, 0, Math.PI * 2);
+  context.fill();
+  context.strokeStyle = "#7657ff";
+  context.lineWidth = 5;
+  context.beginPath();
+  context.arc(620, 375, 72, 0, Math.PI * 2);
+  context.stroke();
+  context.fillStyle = "#5438d7";
+  context.font = '800 68px "Arial", sans-serif';
+  context.fillText("✦", 620, 399);
+
+  context.fillStyle = "#5438d7";
+  context.font = '800 22px "Arial", sans-serif';
+  context.fillText("CONGRATULATIONS", 620, 520);
+
+  context.fillStyle = "#071b33";
+  fittedCanvasFont(context, explorerName, 950, 76, 40, 800);
+  context.fillText(explorerName, 620, 610);
+
+  context.fillStyle = "#718095";
+  context.font = '700 22px "Arial", sans-serif';
+  context.fillText("YOU ARE NOW AN", 620, 680);
+
+  context.fillStyle = "#7657ff";
+  roundedRectPath(context, 160, 718, 920, 170, 34);
+  context.fill();
+  context.fillStyle = "#ffffff";
+  fittedCanvasFont(context, "Official MicroExplorer", 820, 58, 38, 800);
+  context.fillText("Official MicroExplorer", 620, 820);
+
+  context.fillStyle = "#46566a";
+  context.font = '600 25px "Arial", sans-serif';
+  context.fillText("Recognised for exploring, observing, and capturing", 620, 980);
+  context.fillText("the tiny worlds all around us.", 620, 1018);
+
+  context.fillStyle = "#718095";
+  context.font = '800 18px "Arial", sans-serif';
+  context.fillText("PRESENTED BY", 620, 1135);
+  context.fillStyle = "#071b33";
+  fittedCanvasFont(context, organizerName, 900, 42, 26, 800);
+  context.fillText(organizerName, 620, 1192);
+
+  context.fillStyle = "#718095";
+  context.font = '600 20px "Arial", sans-serif';
+  context.fillText(
+    new Date().toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" }),
+    620,
+    1250,
+  );
+
+  context.fillStyle = "#fff7db";
+  roundedRectPath(context, 245, 1345, 750, 118, 24);
+  context.fill();
+  context.fillStyle = "#716333";
+  context.font = '700 22px "Arial", sans-serif';
+  context.fillText("Keep looking closely. Stay curious.", 620, 1415);
+
+  context.textAlign = "left";
+  context.fillStyle = "#718095";
+  context.font = '600 17px "Arial", sans-serif';
+  context.fillText("MicroExplorer Discovery Reel", 90, 1690);
+  context.textAlign = "right";
+  context.fillText(`Page ${pageIndex + 1} of ${pageCount}`, 1150, 1690);
+  context.textAlign = "left";
+
+  const jpegBlob = await canvasAsJpeg(canvasPage);
+  return new Uint8Array(await jpegBlob.arrayBuffer());
+}
+
 function bytesFromString(value) {
   return new TextEncoder().encode(value);
 }
@@ -1180,31 +1305,75 @@ function setPdfButtonLabel(label, includeIcon = false) {
   }
 }
 
-async function downloadDiscoveryPdf() {
+function readStoredOrganizer(storage) {
+  try {
+    return storage.getItem(organizerStorageKey) || "";
+  } catch {
+    return "";
+  }
+}
+
+function removeStoredOrganizer(storage) {
+  try {
+    storage.removeItem(organizerStorageKey);
+  } catch {
+    // Storage can be unavailable in privacy-restricted browser contexts.
+  }
+}
+
+function writeStoredOrganizer(storage, organizerName) {
+  try {
+    storage.setItem(organizerStorageKey, organizerName);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function openExportDialog() {
   if (!state.snapshots.length) {
     showToast("Take at least one snapshot before making a PDF.");
     return;
   }
 
-  const response = window.prompt("What is the explorer's name?", state.explorerName);
-  if (response === null) return;
-  const explorerName = response.trim().replace(/\s+/g, " ").slice(0, 60);
-  if (!explorerName) {
-    showToast("Add the explorer's name to create the PDF.");
-    return;
-  }
+  const rememberedOrganizer = readStoredOrganizer(localStorage);
+  const sessionOrganizer = readStoredOrganizer(sessionStorage);
+  exportExplorerName.value = "";
+  exportOrganizerName.value = rememberedOrganizer || sessionOrganizer || "";
+  rememberOrganizer.checked = Boolean(rememberedOrganizer);
+  forgetOrganizerButton.hidden = !(rememberedOrganizer || sessionOrganizer);
+  exportExplorerName.setCustomValidity("");
+  exportOrganizerName.setCustomValidity("");
+  exportDialog.showModal();
+  window.setTimeout(() => exportExplorerName.focus(), 0);
+}
+
+function forgetOrganizer() {
+  removeStoredOrganizer(localStorage);
+  removeStoredOrganizer(sessionStorage);
+  state.organizerName = "";
+  exportOrganizerName.value = "";
+  rememberOrganizer.checked = false;
+  forgetOrganizerButton.hidden = true;
+  exportOrganizerName.focus();
+  showToast("Organizer forgotten on this device.");
+}
+
+async function generateDiscoveryPdf(explorerName, organizerName) {
 
   state.explorerName = explorerName;
+  state.organizerName = organizerName;
   downloadPdfButton.disabled = true;
   setPdfButtonLabel("Creating PDF…");
 
   try {
     await document.fonts?.ready;
     const snapshots = [...state.snapshots];
-    const pageCount = Math.ceil(snapshots.length / 2);
+    const discoveryPageCount = Math.ceil(snapshots.length / 2);
+    const pageCount = discoveryPageCount + 1;
     const jpegPages = [];
 
-    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+    for (let pageIndex = 0; pageIndex < discoveryPageCount; pageIndex += 1) {
       jpegPages.push(await renderDiscoveryPdfPage(
         snapshots.slice(pageIndex * 2, (pageIndex * 2) + 2),
         pageIndex,
@@ -1212,6 +1381,12 @@ async function downloadDiscoveryPdf() {
         explorerName,
       ));
     }
+    jpegPages.push(await renderCertificatePdfPage(
+      explorerName,
+      organizerName,
+      discoveryPageCount,
+      pageCount,
+    ));
 
     const pdfBlob = buildDiscoveryPdf(jpegPages);
     const pdfUrl = URL.createObjectURL(pdfBlob);
@@ -1226,6 +1401,8 @@ async function downloadDiscoveryPdf() {
   } catch {
     showToast("The PDF could not be created. Please try again.");
   } finally {
+    state.explorerName = "";
+    exportExplorerName.value = "";
     downloadPdfButton.disabled = false;
     setPdfButtonLabel("Export PDF", true);
   }
@@ -1296,6 +1473,40 @@ labelDialog.addEventListener("cancel", (event) => {
   discardPendingSnapshot();
 });
 
+exportForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const explorerName = exportExplorerName.value.trim().replace(/\s+/g, " ").slice(0, 60);
+  const organizerName = exportOrganizerName.value.trim().replace(/\s+/g, " ").slice(0, 80);
+  if (!explorerName) {
+    exportExplorerName.setCustomValidity("Add the explorer's name first.");
+    exportExplorerName.reportValidity();
+    return;
+  }
+  if (!organizerName) {
+    exportOrganizerName.setCustomValidity("Add the event organizer first.");
+    exportOrganizerName.reportValidity();
+    return;
+  }
+
+  writeStoredOrganizer(sessionStorage, organizerName);
+  if (rememberOrganizer.checked) writeStoredOrganizer(localStorage, organizerName);
+  else removeStoredOrganizer(localStorage);
+  forgetOrganizerButton.hidden = false;
+  exportDialog.close();
+  void generateDiscoveryPdf(explorerName, organizerName);
+});
+
+exportExplorerName.addEventListener("input", () => exportExplorerName.setCustomValidity(""));
+exportOrganizerName.addEventListener("input", () => exportOrganizerName.setCustomValidity(""));
+forgetOrganizerButton.addEventListener("click", forgetOrganizer);
+$("#cancelExportButton").addEventListener("click", () => {
+  exportExplorerName.value = "";
+  exportDialog.close();
+});
+exportDialog.addEventListener("cancel", () => {
+  exportExplorerName.value = "";
+});
+
 snapshotGrid.addEventListener("click", (event) => {
   const button = event.target instanceof Element
     ? event.target.closest("[data-delete-snapshot]")
@@ -1304,7 +1515,7 @@ snapshotGrid.addEventListener("click", (event) => {
 });
 
 clearSnapshotsButton.addEventListener("click", clearSnapshots);
-downloadPdfButton.addEventListener("click", downloadDiscoveryPdf);
+downloadPdfButton.addEventListener("click", openExportDialog);
 
 if (navigator.mediaDevices?.addEventListener) {
   navigator.mediaDevices.addEventListener("devicechange", () => {

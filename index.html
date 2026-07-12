@@ -327,6 +327,56 @@
       </form>
     </dialog>
 
+    <dialog class="export-dialog" id="exportDialog" aria-labelledby="exportDialogTitle">
+      <form class="export-form" id="exportForm" method="dialog">
+        <div class="export-heading">
+          <span aria-hidden="true">✦</span>
+          <div>
+            <p class="eyebrow dark">Discovery certificate</p>
+            <h2 id="exportDialogTitle">Create the explorer's PDF</h2>
+          </div>
+        </div>
+        <p class="export-intro">These details stay in this browser and are used only to create the PDF.</p>
+
+        <label for="exportExplorerName">Explorer name</label>
+        <input
+          id="exportExplorerName"
+          name="explorerName"
+          type="text"
+          maxlength="60"
+          placeholder="e.g. JC"
+          autocomplete="off"
+          required
+        />
+
+        <label for="exportOrganizerName">Presented by</label>
+        <input
+          id="exportOrganizerName"
+          name="organizerName"
+          type="text"
+          maxlength="80"
+          placeholder="e.g. Setia City Mall"
+          autocomplete="organization"
+          required
+        />
+
+        <label class="remember-organizer" for="rememberOrganizer">
+          <input id="rememberOrganizer" type="checkbox" />
+          <span>Remember this organizer on this device</span>
+        </label>
+
+        <div class="organizer-privacy">
+          <small>The explorer name is never saved. The organizer remains for this tab; choose remember to keep it on this device.</small>
+          <button id="forgetOrganizerButton" type="button" hidden>Forget organizer</button>
+        </div>
+
+        <div class="export-actions">
+          <button class="export-cancel" id="cancelExportButton" type="button">Cancel</button>
+          <button class="export-submit" type="submit">Create certificate PDF</button>
+        </div>
+      </form>
+    </dialog>
+
     <canvas id="captureCanvas" hidden></canvas>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
