@@ -1237,6 +1237,23 @@ a {
   background: var(--white);
 }
 
+.discoveries-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pdf-button {
+  border-color: var(--purple);
+  background: var(--purple);
+  color: var(--white);
+}
+
+.pdf-button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
 .snapshot-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1704,6 +1721,10 @@ footer {
   .discoveries-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .discoveries-actions {
+    width: 100%;
   }
 
   .section-note {

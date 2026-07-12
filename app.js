@@ -38,6 +38,16 @@ const videoFilters = {
   invert: "invert(1) hue-rotate(180deg)",
 };
 
+const qualityProfiles = [
+  { width: 2560, height: 1440 },
+  { width: 1920, height: 1080 },
+  { width: 1600, height: 1200 },
+  { width: 1280, height: 960 },
+  { width: 1280, height: 720 },
+  { width: 1024, height: 768 },
+  { width: 800, height: 600 },
+];
+
 const state = {
   stream: null,
   activeMission: "leaf",
@@ -45,6 +55,7 @@ const state = {
   zoom: 1,
   torchSupported: false,
   lightOn: false,
+  explorerName: "",
   snapshots: [],
   xp: 0,
   toastTimer: null,
@@ -74,6 +85,7 @@ const canvas = $("#captureCanvas");
 const snapshotGrid = $("#snapshotGrid");
 const snapshotEmpty = $("#snapshotEmpty");
 const clearSnapshotsButton = $("#clearSnapshotsButton");
+const downloadPdfButton = $("#downloadPdfButton");
 const toast = $("#toast");
 const confettiLayer = $("#confettiLayer");
 const xpCount = $("#xpCount");
@@ -142,7 +154,7 @@ async function toggleSubjectLight() {
   lightButton.disabled = true;
 
   try {
-    await track.applyConstraints({ advanced: [{ torch: nextState }] });
+    await applyAdvancedTrackSetting(track, { torch: nextState });
     state.lightOn = nextState;
     lightButton.setAttribute("aria-pressed", String(nextState));
     lightButtonText.textContent = nextState ? "Light on" : "Light off";
@@ -196,6 +208,78 @@ async function populateCameraList(preferredId) {
   }
 }
 
+async function applyAdvancedTrackSetting(track, setting) {
+  const constraints = track.getConstraints?.() || {};
+  const changedKeys = Object.keys(setting);
+  const existingAdvanced = (constraints.advanced || []).filter((entry) =>
+    changedKeys.every((key) => !(key in entry)),
+  );
+
+  await track.applyConstraints({
+    ...constraints,
+    advanced: [...existingAdvanced, setting],
+  });
+}
+
+async function optimiseCameraQuality(track) {
+  const initialSettings = track.getSettings();
+  const initialPixels = (initialSettings.width || 0) * (initialSettings.height || 0);
+  let capabilities = {};
+
+  try {
+    capabilities = track.getCapabilities?.() || {};
+  } catch {
+    // The current settings still provide a safe fallback in older browsers.
+  }
+
+  const maxWidth = capabilities.width?.max || Infinity;
+  const maxHeight = capabilities.height?.max || Infinity;
+  const supportsNativeSizing = capabilities.resizeMode?.includes("none");
+  const supportsContinuousFocus = capabilities.focusMode?.includes("continuous");
+  const profiles = [...qualityProfiles];
+
+  if (Number.isFinite(maxWidth) && Number.isFinite(maxHeight)) {
+    profiles.push({ width: maxWidth, height: maxHeight });
+  }
+
+  const candidates = profiles
+    .filter(({ width, height }) => width <= maxWidth && height <= maxHeight)
+    .filter(({ width, height }) => width * height > initialPixels)
+    .filter((profile, index, all) =>
+      all.findIndex(({ width, height }) => width === profile.width && height === profile.height) === index,
+    )
+    .sort((a, b) => (b.width * b.height) - (a.width * a.height));
+
+  for (const profile of candidates) {
+    const constraints = {
+      width: { exact: profile.width },
+      height: { exact: profile.height },
+      // Some microscopes only expose their highest resolution at a lower frame rate.
+      frameRate: { ideal: 15 },
+    };
+
+    if (supportsNativeSizing) constraints.resizeMode = { exact: "none" };
+    if (supportsContinuousFocus) constraints.advanced = [{ focusMode: "continuous" }];
+
+    try {
+      await track.applyConstraints(constraints);
+      return { upgraded: true, autofocus: supportsContinuousFocus };
+    } catch {
+      // Try the next native resolution advertised by common UVC microscopes.
+    }
+  }
+
+  if (supportsContinuousFocus) {
+    try {
+      await applyAdvancedTrackSetting(track, { focusMode: "continuous" });
+    } catch {
+      return { upgraded: false, autofocus: false };
+    }
+  }
+
+  return { upgraded: false, autofocus: supportsContinuousFocus };
+}
+
 async function connectCamera(deviceId = "") {
   if (!window.isSecureContext) {
     setConnection("error", "HTTPS needed");
@@ -233,13 +317,8 @@ async function connectCamera(deviceId = "") {
       audio: false,
     });
 
-    video.srcObject = state.stream;
-    await video.play();
-
     const track = state.stream.getVideoTracks()[0];
-    const settings = track.getSettings();
-    const width = settings.width || video.videoWidth;
-    const height = settings.height || video.videoHeight;
+    let settings = track.getSettings();
 
     if (!deviceId) {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -252,6 +331,17 @@ async function connectCamera(deviceId = "") {
       }
     }
 
+    setConnection("working", "Finding sharpest view…");
+    connectButtonText.textContent = "Finding sharpest view…";
+    const qualityResult = await optimiseCameraQuality(track);
+
+    video.srcObject = state.stream;
+    await video.play();
+
+    settings = track.getSettings();
+    const width = settings.width || video.videoWidth;
+    const height = settings.height || video.videoHeight;
+
     viewerCard.classList.add("is-live");
     liveLabel.textContent = "LIVE";
     resolutionReadout.textContent = width && height ? `${width} × ${height}` : "LENS ONLINE";
@@ -261,7 +351,13 @@ async function connectCamera(deviceId = "") {
     connectButtonText.textContent = "Reconnect microscope";
     setConnection("live", "Lens online");
     await populateCameraList(settings.deviceId);
-    showToast("Lens online! Your tiny-world lab is ready.");
+    if (qualityResult.upgraded) {
+      showToast(`Sharper camera mode found: ${width} × ${height}.`);
+    } else if (width <= 640 && height <= 480) {
+      showToast("The camera is sending 640 × 480. Use its focus ring and subject light for the clearest view.");
+    } else {
+      showToast(`Lens online at ${width} × ${height}.`);
+    }
     addXp(5);
 
     track.addEventListener("ended", () => {
@@ -420,6 +516,7 @@ function renderSnapshots() {
   if (!state.snapshots.length) {
     snapshotGrid.append(snapshotEmpty);
     clearSnapshotsButton.hidden = true;
+    downloadPdfButton.hidden = true;
     return;
   }
 
@@ -427,6 +524,344 @@ function renderSnapshots() {
     snapshotGrid.append(snapshotCard(snapshot, index));
   });
   clearSnapshotsButton.hidden = false;
+  downloadPdfButton.hidden = false;
+}
+
+function roundedRectPath(context, x, y, width, height, radius) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.arcTo(x + width, y, x + width, y + height, safeRadius);
+  context.arcTo(x + width, y + height, x, y + height, safeRadius);
+  context.arcTo(x, y + height, x, y, safeRadius);
+  context.arcTo(x, y, x + width, y, safeRadius);
+  context.closePath();
+}
+
+function wrappedLines(context, text, maxWidth, maxLines = Infinity) {
+  const words = String(text).trim().split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+
+  words.forEach((word) => {
+    const candidate = line ? `${line} ${word}` : word;
+    if (line && context.measureText(candidate).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  });
+
+  if (line) lines.push(line);
+  if (lines.length <= maxLines) return lines;
+
+  const visible = lines.slice(0, maxLines);
+  let finalLine = visible[maxLines - 1];
+  while (finalLine && context.measureText(`${finalLine}…`).width > maxWidth) {
+    finalLine = finalLine.slice(0, -1).trimEnd();
+  }
+  visible[maxLines - 1] = `${finalLine}…`;
+  return visible;
+}
+
+function loadSnapshotImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Snapshot image could not be loaded"));
+    image.src = url;
+  });
+}
+
+function drawImageCover(context, image, x, y, width, height) {
+  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const sourceWidth = width / scale;
+  const sourceHeight = height / scale;
+  const sourceX = (image.naturalWidth - sourceWidth) / 2;
+  const sourceY = (image.naturalHeight - sourceHeight) / 2;
+  context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
+}
+
+async function drawDiscoveryCard(context, snapshot, discoveryNumber, y) {
+  const x = 90;
+  const width = 1060;
+  const height = 590;
+  const imageHeight = 430;
+  const image = await loadSnapshotImage(snapshot.url);
+
+  context.save();
+  context.shadowColor = "rgba(7, 27, 51, 0.13)";
+  context.shadowBlur = 24;
+  context.shadowOffsetY = 10;
+  context.fillStyle = "#ffffff";
+  roundedRectPath(context, x, y, width, height, 28);
+  context.fill();
+  context.restore();
+
+  context.save();
+  roundedRectPath(context, x, y, width, height, 28);
+  context.clip();
+  drawImageCover(context, image, x, y, width, imageHeight);
+  context.restore();
+
+  context.fillStyle = "rgba(7, 27, 51, 0.78)";
+  roundedRectPath(context, x + 24, y + 24, 180, 42, 12);
+  context.fill();
+  context.fillStyle = "#ffffff";
+  context.font = '800 18px "Arial", sans-serif';
+  context.fillText(`DISCOVERY ${discoveryNumber}`, x + 42, y + 52);
+
+  const infoY = y + imageHeight;
+  context.fillStyle = "#071b33";
+  context.font = '800 28px "Arial", sans-serif';
+  context.fillText(snapshot.mission, x + 34, infoY + 48);
+
+  context.fillStyle = "#77869a";
+  context.font = '600 18px "Arial", sans-serif';
+  context.textAlign = "right";
+  context.fillText(
+    snapshot.time.toLocaleString([], {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+    x + width - 34,
+    infoY + 47,
+  );
+  context.textAlign = "left";
+
+  context.fillStyle = "#46566a";
+  context.font = '500 22px "Arial", sans-serif';
+  const note = snapshot.note || "A tiny-world discovery captured through the microscope.";
+  wrappedLines(context, note, width - 68, 2).forEach((line, index) => {
+    context.fillText(line, x + 34, infoY + 91 + (index * 30));
+  });
+}
+
+function canvasAsJpeg(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("PDF page could not be rendered"));
+    }, "image/jpeg", 0.92);
+  });
+}
+
+async function renderDiscoveryPdfPage(snapshots, pageIndex, pageCount, explorerName) {
+  const canvasPage = document.createElement("canvas");
+  canvasPage.width = 1240;
+  canvasPage.height = 1754;
+  const context = canvasPage.getContext("2d", { alpha: false });
+
+  context.fillStyle = "#f6f1e7";
+  context.fillRect(0, 0, canvasPage.width, canvasPage.height);
+  context.fillStyle = "#071b33";
+  context.fillRect(0, 0, canvasPage.width, 230);
+
+  context.fillStyle = "rgba(95, 242, 214, 0.13)";
+  context.beginPath();
+  context.arc(1130, 42, 125, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = "rgba(255, 107, 157, 0.15)";
+  context.beginPath();
+  context.arc(1030, 210, 76, 0, Math.PI * 2);
+  context.fill();
+
+  context.fillStyle = "#5ff2d6";
+  context.font = '800 19px "Arial", sans-serif';
+  context.fillText("MICROEXPLORER • DISCOVERY REEL", 90, 55);
+  context.fillStyle = "#ffffff";
+  context.font = '800 52px "Arial", sans-serif';
+  context.fillText("Tiny-World Discoveries", 90, 122);
+  context.fillStyle = "rgba(255, 255, 255, 0.78)";
+  let nameFontSize = 25;
+  context.font = `600 ${nameFontSize}px "Arial", sans-serif`;
+  while (nameFontSize > 18 && context.measureText(`Explorer: ${explorerName}`).width > 850) {
+    nameFontSize -= 1;
+    context.font = `600 ${nameFontSize}px "Arial", sans-serif`;
+  }
+  context.fillText(`Explorer: ${explorerName}`, 90, 170);
+  context.font = '500 18px "Arial", sans-serif';
+  context.fillText(
+    new Date().toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" }),
+    90,
+    202,
+  );
+
+  for (let index = 0; index < snapshots.length; index += 1) {
+    await drawDiscoveryCard(context, snapshots[index], (pageIndex * 2) + index + 1, 270 + (index * 625));
+  }
+
+  context.fillStyle = "#718095";
+  context.font = '600 17px "Arial", sans-serif';
+  context.fillText("Look closely. Stay curious.", 90, 1690);
+  context.textAlign = "right";
+  context.fillText(`Page ${pageIndex + 1} of ${pageCount}`, 1150, 1690);
+  context.textAlign = "left";
+
+  const jpegBlob = await canvasAsJpeg(canvasPage);
+  return new Uint8Array(await jpegBlob.arrayBuffer());
+}
+
+function bytesFromString(value) {
+  return new TextEncoder().encode(value);
+}
+
+function combineBytes(parts) {
+  const length = parts.reduce((total, part) => total + part.length, 0);
+  const result = new Uint8Array(length);
+  let offset = 0;
+  parts.forEach((part) => {
+    result.set(part, offset);
+    offset += part.length;
+  });
+  return result;
+}
+
+function pdfStream(dictionary, data) {
+  return combineBytes([
+    bytesFromString(`<< ${dictionary} /Length ${data.length} >>\nstream\n`),
+    data,
+    bytesFromString("\nendstream"),
+  ]);
+}
+
+function buildDiscoveryPdf(jpegPages) {
+  const objects = [null];
+  const reserveObject = () => {
+    objects.push(null);
+    return objects.length - 1;
+  };
+  const catalogId = reserveObject();
+  const pagesId = reserveObject();
+  const pageIds = [];
+
+  jpegPages.forEach((jpegData) => {
+    const imageId = reserveObject();
+    const contentId = reserveObject();
+    const pageId = reserveObject();
+    const content = bytesFromString("q\n595.28 0 0 841.89 0 0 cm\n/Im0 Do\nQ");
+
+    objects[imageId] = pdfStream(
+      "/Type /XObject /Subtype /Image /Width 1240 /Height 1754 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode",
+      jpegData,
+    );
+    objects[contentId] = pdfStream("", content);
+    objects[pageId] = bytesFromString(
+      `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /Im0 ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`,
+    );
+    pageIds.push(pageId);
+  });
+
+  objects[pagesId] = bytesFromString(
+    `<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] >>`,
+  );
+  objects[catalogId] = bytesFromString(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+
+  const header = combineBytes([
+    bytesFromString("%PDF-1.4\n%"),
+    new Uint8Array([0xe2, 0xe3, 0xcf, 0xd3, 0x0a]),
+  ]);
+  const parts = [header];
+  const offsets = [0];
+  let byteOffset = header.length;
+
+  for (let id = 1; id < objects.length; id += 1) {
+    const objectBytes = combineBytes([
+      bytesFromString(`${id} 0 obj\n`),
+      objects[id],
+      bytesFromString("\nendobj\n"),
+    ]);
+    offsets[id] = byteOffset;
+    parts.push(objectBytes);
+    byteOffset += objectBytes.length;
+  }
+
+  const xrefOffset = byteOffset;
+  const xrefRows = ["0000000000 65535 f "];
+  for (let id = 1; id < objects.length; id += 1) {
+    xrefRows.push(`${String(offsets[id]).padStart(10, "0")} 00000 n `);
+  }
+  parts.push(bytesFromString(
+    `xref\n0 ${objects.length}\n${xrefRows.join("\n")}\ntrailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`,
+  ));
+
+  return new Blob(parts, { type: "application/pdf" });
+}
+
+function safePdfFilename(explorerName) {
+  const safeName = explorerName
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return `${safeName || "explorer"}-tiny-world-discoveries.pdf`;
+}
+
+function setPdfButtonLabel(label, includeIcon = false) {
+  downloadPdfButton.replaceChildren();
+  if (includeIcon) {
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "↓";
+    downloadPdfButton.append(icon, ` ${label}`);
+  } else {
+    downloadPdfButton.textContent = label;
+  }
+}
+
+async function downloadDiscoveryPdf() {
+  if (!state.snapshots.length) {
+    showToast("Take at least one snapshot before making a PDF.");
+    return;
+  }
+
+  const response = window.prompt("What is the explorer's name?", state.explorerName);
+  if (response === null) return;
+  const explorerName = response.trim().replace(/\s+/g, " ").slice(0, 60);
+  if (!explorerName) {
+    showToast("Add the explorer's name to create the PDF.");
+    return;
+  }
+
+  state.explorerName = explorerName;
+  downloadPdfButton.disabled = true;
+  setPdfButtonLabel("Creating PDF…");
+
+  try {
+    await document.fonts?.ready;
+    const snapshots = [...state.snapshots];
+    const pageCount = Math.ceil(snapshots.length / 2);
+    const jpegPages = [];
+
+    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+      jpegPages.push(await renderDiscoveryPdfPage(
+        snapshots.slice(pageIndex * 2, (pageIndex * 2) + 2),
+        pageIndex,
+        pageCount,
+        explorerName,
+      ));
+    }
+
+    const pdfBlob = buildDiscoveryPdf(jpegPages);
+    const pdfUrl = URL.createObjectURL(pdfBlob);
+    const download = document.createElement("a");
+    download.href = pdfUrl;
+    download.download = safePdfFilename(explorerName);
+    document.body.append(download);
+    download.click();
+    download.remove();
+    window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
+    showToast(`PDF saved for ${explorerName}.`);
+  } catch {
+    showToast("The PDF could not be created. Please try again.");
+  } finally {
+    downloadPdfButton.disabled = false;
+    setPdfButtonLabel("Download PDF", true);
+  }
 }
 
 function deleteSnapshot(id) {
@@ -559,6 +994,7 @@ snapshotGrid.addEventListener("click", (event) => {
 });
 
 clearSnapshotsButton.addEventListener("click", clearSnapshots);
+downloadPdfButton.addEventListener("click", downloadDiscoveryPdf);
 
 if (navigator.mediaDevices?.addEventListener) {
   navigator.mediaDevices.addEventListener("devicechange", () => {
