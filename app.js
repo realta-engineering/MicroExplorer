@@ -21,8 +21,6 @@ const state = {
   stream: null,
   filter: "natural",
   zoom: 1,
-  torchSupported: false,
-  lightOn: false,
   explorerName: "",
   snapshots: [],
   pendingSnapshot: null,
@@ -46,9 +44,6 @@ const resolutionReadout = $("#resolutionReadout");
 const zoomSlider = $("#zoomSlider");
 const zoomOutput = $("#zoomOutput");
 const zoomReadout = $("#zoomReadout");
-const lightButton = $("#lightButton");
-const lightButtonText = $("#lightButtonText");
-const lightTip = $("#lightTip");
 const canvas = $("#captureCanvas");
 const snapshotGrid = $("#snapshotGrid");
 const snapshotEmpty = $("#snapshotEmpty");
@@ -72,73 +67,11 @@ function setConnection(stateName, message) {
   connectionText.textContent = message;
 }
 
-function resetLightControl(message = "Connect a camera to check for LED control.") {
-  state.torchSupported = false;
-  state.lightOn = false;
-  lightButton.disabled = true;
-  lightButton.setAttribute("aria-pressed", "false");
-  lightButtonText.textContent = "Check light";
-  lightTip.textContent = message;
-}
-
-function configureLightControl(track) {
-  let capabilities = {};
-  try {
-    capabilities = track.getCapabilities?.() || {};
-  } catch {
-    // Some browsers expose getCapabilities but do not allow it for every device.
-  }
-
-  const torchCapability = capabilities.torch;
-  const supportsTorch = torchCapability === true
-    || (Array.isArray(torchCapability) && torchCapability.includes(true));
-
-  if (!supportsTorch) {
-    resetLightControl("Use the microscope's light wheel or button; browser LED control is unavailable.");
-    return;
-  }
-
-  state.torchSupported = true;
-  state.lightOn = Boolean(track.getSettings?.().torch);
-  lightButton.disabled = false;
-  lightButton.setAttribute("aria-pressed", String(state.lightOn));
-  lightButtonText.textContent = state.lightOn ? "Light on" : "Light off";
-  lightTip.textContent = "This camera allows its subject light to be controlled here.";
-}
-
-async function toggleSubjectLight() {
-  const track = state.stream?.getVideoTracks()[0];
-  if (!track || !state.torchSupported) {
-    showToast("This microscope uses its hardware light wheel or button.");
-    return;
-  }
-
-  const nextState = !state.lightOn;
-  lightButton.disabled = true;
-
-  try {
-    await applyAdvancedTrackSetting(track, { torch: nextState });
-    state.lightOn = nextState;
-    lightButton.setAttribute("aria-pressed", String(nextState));
-    lightButtonText.textContent = nextState ? "Light on" : "Light off";
-    showToast(nextState ? "Subject light switched on." : "Subject light switched off.");
-  } catch {
-    state.torchSupported = false;
-    lightButton.setAttribute("aria-pressed", "false");
-    lightButtonText.textContent = "No light control";
-    lightTip.textContent = "The camera rejected LED control. Use its hardware light wheel or button.";
-    showToast("The browser could not control this microscope's light.");
-  } finally {
-    lightButton.disabled = !state.torchSupported;
-  }
-}
-
 function stopStream() {
   if (!state.stream) return;
   state.stream.getTracks().forEach((track) => track.stop());
   state.stream = null;
   video.srcObject = null;
-  resetLightControl();
 }
 
 function friendlyCameraError(error) {
@@ -310,14 +243,13 @@ async function connectCamera(deviceId = "") {
     resolutionReadout.textContent = width && height ? `${width} × ${height}` : "LENS ONLINE";
     captureButton.disabled = false;
     fullscreenButton.disabled = false;
-    configureLightControl(track);
     connectButtonText.textContent = "Reconnect microscope";
     setConnection("live", "Lens online");
     await populateCameraList(settings.deviceId);
     if (qualityResult.upgraded) {
       showToast(`Sharper camera mode found: ${width} × ${height}.`);
     } else if (width <= 640 && height <= 480) {
-      showToast("The camera is sending 640 × 480. Use its focus ring and subject light for the clearest view.");
+      showToast("The camera is sending 640 × 480. Use its focus ring and physical light wheel for the clearest view.");
     } else {
       showToast(`Lens online at ${width} × ${height}.`);
     }
@@ -325,7 +257,6 @@ async function connectCamera(deviceId = "") {
       viewerCard.classList.remove("is-live");
       captureButton.disabled = true;
       fullscreenButton.disabled = true;
-      resetLightControl();
       liveLabel.textContent = "STANDBY";
       resolutionReadout.textContent = "CAMERA DISCONNECTED";
       setConnection("idle", "Camera resting");
@@ -335,7 +266,6 @@ async function connectCamera(deviceId = "") {
     viewerCard.classList.remove("is-live");
     captureButton.disabled = true;
     fullscreenButton.disabled = true;
-    resetLightControl();
     liveLabel.textContent = "STANDBY";
     resolutionReadout.textContent = "CHECK CONNECTION";
     setConnection("error", "Needs attention");
@@ -888,7 +818,6 @@ cameraSelect.addEventListener("change", () => connectCamera(cameraSelect.value))
 captureButton.addEventListener("click", captureDiscovery);
 fullscreenButton.addEventListener("click", openFullscreen);
 zoomSlider.addEventListener("input", (event) => setZoom(event.target.value));
-lightButton.addEventListener("click", toggleSubjectLight);
 
 $$(".filter-chip").forEach((button) => {
   button.addEventListener("click", () => selectFilter(button.dataset.filter));

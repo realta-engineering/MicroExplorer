@@ -838,7 +838,7 @@ a {
 
 .viewer-tools {
   display: grid;
-  grid-template-columns: 0.9fr 0.72fr 1.1fr;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
   gap: 14px;
   padding: 2px 20px 22px;
 }
@@ -879,47 +879,6 @@ a {
   width: 100%;
   margin: 14px 0 2px;
   accent-color: var(--mint);
-}
-
-.light-toggle {
-  display: inline-flex;
-  width: 100%;
-  min-height: 38px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  margin-top: 10px;
-  padding: 7px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.72);
-  cursor: pointer;
-  font-size: 0.69rem;
-  font-weight: 900;
-  transition: transform 150ms ease, filter 150ms ease, background 150ms ease;
-}
-
-.light-toggle:hover:not(:disabled) {
-  transform: translateY(-1px);
-  filter: brightness(1.08);
-}
-
-.light-toggle[aria-pressed="true"] {
-  border-color: var(--yellow);
-  background: var(--yellow);
-  color: var(--ink);
-  box-shadow: 0 0 20px rgba(255, 214, 102, 0.16);
-}
-
-.light-toggle:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
-}
-
-.light-icon {
-  font-size: 1rem;
-  line-height: 1;
 }
 
 .filter-buttons {
