@@ -108,6 +108,7 @@
 
               <div class="stage" id="stage">
                 <video id="microscopeVideo" autoplay muted playsinline aria-label="Live microscope video"></video>
+                <canvas class="edge-overlay" id="edgeOverlay" aria-hidden="true" hidden></canvas>
 
                 <div class="stage-placeholder" id="stagePlaceholder">
                   <div class="micro-world" aria-hidden="true">
@@ -202,7 +203,14 @@
                     <button type="button" class="assist-toggle" id="autoEnhanceButton" aria-pressed="false" disabled>
                       <span aria-hidden="true">✨</span> Auto enhance
                     </button>
+                    <button type="button" class="assist-toggle" id="edgeHighlightButton" aria-pressed="false" disabled>
+                      <span aria-hidden="true">≋</span> Edge explorer
+                    </button>
                   </div>
+                  <label class="edge-intensity" id="edgeIntensityControl" for="edgeIntensity" hidden>
+                    <span>Edge intensity</span>
+                    <input id="edgeIntensity" type="range" min="0.2" max="1" step="0.05" value="0.6" />
+                  </label>
                   <small id="assistTip" role="status">Connect the microscope to use discovery helpers.</small>
                 </div>
               </div>

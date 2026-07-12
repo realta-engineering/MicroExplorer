@@ -572,6 +572,19 @@ a {
   opacity: 1;
 }
 
+.edge-overlay {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.edge-overlay[hidden] {
+  display: none;
+}
+
 .stage-placeholder {
   position: absolute;
   z-index: 2;
@@ -976,7 +989,7 @@ a {
 
 .assist-buttons {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
   margin-top: 9px;
 }
@@ -1002,6 +1015,26 @@ a {
 .assist-toggle:disabled {
   cursor: not-allowed;
   opacity: 0.4;
+}
+
+.edge-intensity {
+  display: grid;
+  grid-template-columns: auto minmax(80px, 1fr);
+  align-items: center;
+  gap: 9px;
+  margin-top: 9px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.edge-intensity[hidden] {
+  display: none;
+}
+
+.edge-intensity input {
+  width: 100%;
+  accent-color: var(--mint);
 }
 
 .label-dialog {

@@ -23,6 +23,10 @@ const state = {
   zoom: 1,
   autoEnhance: false,
   autoEnhanceFilter: "none",
+  edgeHighlight: false,
+  edgeIntensity: 0.6,
+  edgeFrame: null,
+  edgeLastSample: 0,
   focusHelper: false,
   focusFrame: null,
   focusLastSample: 0,
@@ -55,6 +59,11 @@ const zoomOutput = $("#zoomOutput");
 const zoomReadout = $("#zoomReadout");
 const focusHelperButton = $("#focusHelperButton");
 const autoEnhanceButton = $("#autoEnhanceButton");
+const edgeHighlightButton = $("#edgeHighlightButton");
+const edgeIntensityControl = $("#edgeIntensityControl");
+const edgeIntensity = $("#edgeIntensity");
+const edgeOverlay = $("#edgeOverlay");
+const edgeOverlayContext = edgeOverlay.getContext("2d");
 const focusHelperPanel = $("#focusHelperPanel");
 const focusStatus = $("#focusStatus");
 const focusMeterFill = $("#focusMeterFill");
@@ -73,6 +82,10 @@ const analysisCanvas = document.createElement("canvas");
 analysisCanvas.width = 160;
 analysisCanvas.height = 120;
 const analysisContext = analysisCanvas.getContext("2d", { willReadFrequently: true });
+const edgeSourceCanvas = document.createElement("canvas");
+const edgeSourceContext = edgeSourceCanvas.getContext("2d", { willReadFrequently: true });
+const captureEdgeCanvas = document.createElement("canvas");
+const captureEdgeContext = captureEdgeCanvas.getContext("2d");
 
 function showToast(message) {
   window.clearTimeout(state.toastTimer);
@@ -265,6 +278,7 @@ async function connectCamera(deviceId = "") {
     fullscreenButton.disabled = false;
     focusHelperButton.disabled = false;
     autoEnhanceButton.disabled = false;
+    edgeHighlightButton.disabled = false;
     assistTip.textContent = "Focus guidance and enhancement are optional and reversible.";
     connectButtonText.textContent = "Reconnect microscope";
     setConnection("live", "Lens online");
@@ -548,13 +562,164 @@ function toggleAutoEnhance() {
   showToast("Auto enhance balanced this microscope view.");
 }
 
+function visibleVideoCrop(targetAspect) {
+  let width = video.videoWidth / state.zoom;
+  let height = video.videoHeight / state.zoom;
+  if (width / height > targetAspect) width = height * targetAspect;
+  else height = width / targetAspect;
+  return {
+    x: (video.videoWidth - width) / 2,
+    y: (video.videoHeight - height) / 2,
+    width,
+    height,
+  };
+}
+
+function sobelEdgeImage(imageData, outputContext, intensity) {
+  const { width, height, data } = imageData;
+  const gray = new Uint8Array(width * height);
+  for (let index = 0; index < gray.length; index += 1) {
+    const offset = index * 4;
+    gray[index] = Math.round(
+      (data[offset] * 0.299) + (data[offset + 1] * 0.587) + (data[offset + 2] * 0.114),
+    );
+  }
+
+  const output = outputContext.createImageData(width, height);
+  const threshold = 82 - (intensity * 50);
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = (y * width) + x;
+      const topLeft = gray[index - width - 1];
+      const top = gray[index - width];
+      const topRight = gray[index - width + 1];
+      const left = gray[index - 1];
+      const right = gray[index + 1];
+      const bottomLeft = gray[index + width - 1];
+      const bottom = gray[index + width];
+      const bottomRight = gray[index + width + 1];
+      const gradientX = -topLeft + topRight - (2 * left) + (2 * right) - bottomLeft + bottomRight;
+      const gradientY = -topLeft - (2 * top) - topRight + bottomLeft + (2 * bottom) + bottomRight;
+      const magnitude = (Math.abs(gradientX) + Math.abs(gradientY)) / 4;
+      if (magnitude <= threshold) continue;
+
+      const outputOffset = index * 4;
+      output.data[outputOffset] = 95;
+      output.data[outputOffset + 1] = 242;
+      output.data[outputOffset + 2] = 214;
+      output.data[outputOffset + 3] = Math.min(225, (magnitude - threshold) * (2.2 + intensity));
+    }
+  }
+  return output;
+}
+
+function drawEdgeSource(crop, width, height) {
+  if (edgeSourceCanvas.width !== width || edgeSourceCanvas.height !== height) {
+    edgeSourceCanvas.width = width;
+    edgeSourceCanvas.height = height;
+  }
+  edgeSourceContext.clearRect(0, 0, width, height);
+  edgeSourceContext.filter = "blur(0.7px)";
+  edgeSourceContext.drawImage(
+    video,
+    crop.x,
+    crop.y,
+    crop.width,
+    crop.height,
+    0,
+    0,
+    width,
+    height,
+  );
+  edgeSourceContext.filter = "none";
+  return edgeSourceContext.getImageData(0, 0, width, height);
+}
+
+function renderLiveEdges() {
+  const stage = $("#stage");
+  const aspect = stage.clientWidth / stage.clientHeight;
+  const height = 180;
+  const width = Math.min(320, Math.round(height * aspect));
+  if (edgeOverlay.width !== width || edgeOverlay.height !== height) {
+    edgeOverlay.width = width;
+    edgeOverlay.height = height;
+  }
+  const crop = visibleVideoCrop(width / height);
+  const source = drawEdgeSource(crop, width, height);
+  const edges = sobelEdgeImage(source, edgeOverlayContext, state.edgeIntensity);
+  edgeOverlayContext.clearRect(0, 0, width, height);
+  edgeOverlayContext.putImageData(edges, 0, 0);
+}
+
+function edgeLoop(timestamp) {
+  if (!state.edgeHighlight) return;
+  state.edgeFrame = window.requestAnimationFrame(edgeLoop);
+  if (timestamp - state.edgeLastSample < 80) return;
+  state.edgeLastSample = timestamp;
+  try {
+    renderLiveEdges();
+  } catch {
+    stopEdgeHighlight();
+    showToast("Edge Explorer could not process this camera view.");
+  }
+}
+
+function startEdgeHighlight() {
+  if (!cameraIsLive()) {
+    showToast("Power up the microscope before using Edge Explorer.");
+    return;
+  }
+  state.edgeHighlight = true;
+  state.edgeLastSample = 0;
+  edgeHighlightButton.setAttribute("aria-pressed", "true");
+  edgeIntensityControl.hidden = false;
+  edgeOverlay.hidden = false;
+  state.edgeFrame = window.requestAnimationFrame(edgeLoop);
+  assistTip.textContent = "Mint outlines reveal strong boundaries generated from the live image.";
+}
+
+function stopEdgeHighlight() {
+  state.edgeHighlight = false;
+  if (state.edgeFrame !== null) window.cancelAnimationFrame(state.edgeFrame);
+  state.edgeFrame = null;
+  edgeHighlightButton.setAttribute("aria-pressed", "false");
+  edgeIntensityControl.hidden = true;
+  edgeOverlay.hidden = true;
+  edgeOverlayContext.clearRect(0, 0, edgeOverlay.width, edgeOverlay.height);
+}
+
+function toggleEdgeHighlight() {
+  if (state.edgeHighlight) {
+    stopEdgeHighlight();
+    assistTip.textContent = "Edge Explorer is off. The generated outlines were removed.";
+    showToast("Edge Explorer switched off.");
+  } else {
+    startEdgeHighlight();
+  }
+}
+
+function applyCaptureEdges(targetContext, crop, width, height) {
+  const source = drawEdgeSource(crop, width, height);
+  captureEdgeCanvas.width = width;
+  captureEdgeCanvas.height = height;
+  const edges = sobelEdgeImage(source, captureEdgeContext, state.edgeIntensity);
+  captureEdgeContext.clearRect(0, 0, width, height);
+  captureEdgeContext.putImageData(edges, 0, 0);
+  targetContext.save();
+  targetContext.filter = "none";
+  targetContext.drawImage(captureEdgeCanvas, 0, 0);
+  targetContext.restore();
+}
+
 function resetProcessingTools() {
   stopFocusHelper();
+  stopEdgeHighlight();
   state.autoEnhance = false;
   state.autoEnhanceFilter = "none";
   autoEnhanceButton.setAttribute("aria-pressed", "false");
   focusHelperButton.disabled = true;
   autoEnhanceButton.disabled = true;
+  edgeHighlightButton.disabled = true;
   assistTip.textContent = "Connect the microscope to use discovery helpers.";
   applyVideoProcessing();
 }
@@ -592,6 +757,14 @@ async function captureDiscovery() {
     outputWidth,
     outputHeight,
   );
+  if (state.edgeHighlight) {
+    applyCaptureEdges(
+      context,
+      { x: sourceX, y: sourceY, width: sourceWidth, height: sourceHeight },
+      outputWidth,
+      outputHeight,
+    );
+  }
 
   const blob = await blobFromCanvas(canvas);
   if (!blob) {
@@ -605,6 +778,10 @@ async function captureDiscovery() {
     url: URL.createObjectURL(blob),
     time: new Date(),
     label: "",
+    enhancements: [
+      ...(state.autoEnhance ? ["Auto enhanced"] : []),
+      ...(state.edgeHighlight ? ["Edge highlight"] : []),
+    ],
   };
 
   requestSnapshotLabel(snapshot);
@@ -681,7 +858,10 @@ function snapshotCard(snapshot, index) {
   const title = document.createElement("strong");
   title.textContent = snapshot.label;
   const meta = document.createElement("small");
-  meta.textContent = snapshot.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const timeLabel = snapshot.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  meta.textContent = snapshot.enhancements?.length
+    ? `${timeLabel} • ${snapshot.enhancements.join(" + ")}`
+    : timeLabel;
   copy.append(title, meta);
 
   const actions = document.createElement("div");
@@ -821,7 +1001,10 @@ async function drawDiscoveryCard(context, snapshot, discoveryNumber, y) {
 
   context.fillStyle = "#46566a";
   context.font = '500 22px "Arial", sans-serif';
-  context.fillText("Captured through the microscope", x + 34, infoY + 91);
+  const processingNote = snapshot.enhancements?.length
+    ? `Enhanced view: ${snapshot.enhancements.join(" + ")}`
+    : "Captured through the microscope";
+  context.fillText(processingNote, x + 34, infoY + 91);
 }
 
 function canvasAsJpeg(canvas) {
@@ -1084,6 +1267,11 @@ fullscreenButton.addEventListener("click", openFullscreen);
 zoomSlider.addEventListener("input", (event) => setZoom(event.target.value));
 focusHelperButton.addEventListener("click", toggleFocusHelper);
 autoEnhanceButton.addEventListener("click", toggleAutoEnhance);
+edgeHighlightButton.addEventListener("click", toggleEdgeHighlight);
+edgeIntensity.addEventListener("input", (event) => {
+  state.edgeIntensity = Number(event.target.value);
+  assistTip.textContent = "Edge intensity changes how many generated outlines are visible.";
+});
 
 $$(".filter-chip").forEach((button) => {
   button.addEventListener("click", () => selectFilter(button.dataset.filter));
