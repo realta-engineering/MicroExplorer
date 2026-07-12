@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Turn a USB microscope into a playful discovery lab for curious young scientists."
+    />
+    <meta name="theme-color" content="#071b33" />
+    <meta property="og:title" content="Microscope Explorer" />
+    <meta
+      property="og:description"
+      content="Connect a microscope. Pick a quest. Discover a tiny universe."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>Microscope Explorer | Micro Quest</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#microscope-lab">Skip to the microscope lab</a>
+
+    <div class="page-sky" aria-hidden="true">
+      <span class="sky-orb sky-orb-one"></span>
+      <span class="sky-orb sky-orb-two"></span>
+      <span class="sky-orb sky-orb-three"></span>
+    </div>
+
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="#top" aria-label="Micro Quest home">
+          <span class="brand-mark" aria-hidden="true">
+            <span class="brand-lens"></span>
+          </span>
+          <span>
+            <span class="brand-kicker">MICRO QUEST</span>
+            <span class="brand-name">Microscope Explorer</span>
+          </span>
+        </a>
+
+        <div class="topbar-actions">
+          <span class="xp-pill" title="Explorer points earned this session">
+            <span aria-hidden="true">✦</span>
+            <strong id="xpCount">0</strong> XP
+          </span>
+          <span class="connection-pill" id="connectionPill" data-state="idle">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="connectionText">Camera resting</span>
+          </span>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero shell" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span aria-hidden="true">✺</span> Your pocket-sized discovery lab</p>
+          <h1 id="hero-title">Big discoveries<br />start <span>tiny.</span></h1>
+          <p class="hero-intro">
+            Plug in a microscope, choose a science quest, and zoom into a universe hiding in
+            plain sight.
+          </p>
+        </div>
+
+        <ol class="launch-steps" aria-label="Three steps to begin">
+          <li>
+            <span class="step-number">1</span>
+            <span><strong>Plug it in</strong><small>Connect your USB microscope</small></span>
+          </li>
+          <li>
+            <span class="step-number">2</span>
+            <span><strong>Power the lens</strong><small>Allow camera access</small></span>
+          </li>
+          <li>
+            <span class="step-number">3</span>
+            <span><strong>Explore!</strong><small>Snap, compare, wonder</small></span>
+          </li>
+        </ol>
+      </section>
+
+      <section class="lab-section" id="microscope-lab" aria-labelledby="lab-heading">
+        <div class="shell">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow dark"><span aria-hidden="true">●</span> Live laboratory</p>
+              <h2 id="lab-heading">What will you discover?</h2>
+            </div>
+            <p class="section-note">Ask a grown-up to help connect cables and prepare slides.</p>
+          </div>
+
+          <div class="lab-grid">
+            <article class="viewer-card" id="viewerCard">
+              <div class="viewer-topline">
+                <div class="viewer-title">
+                  <span class="live-indicator" aria-hidden="true"></span>
+                  <span>MICROSCOPE VIEW</span>
+                  <span class="live-label" id="liveLabel">STANDBY</span>
+                </div>
+
+                <label class="camera-picker">
+                  <span class="sr-only">Choose camera</span>
+                  <select id="cameraSelect" disabled>
+                    <option value="">Connect to discover cameras</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="stage" id="stage">
+                <video id="microscopeVideo" autoplay muted playsinline aria-label="Live microscope video"></video>
+
+                <div class="stage-placeholder" id="stagePlaceholder">
+                  <div class="micro-world" aria-hidden="true">
+                    <span class="microbe microbe-a"><i></i><i></i><i></i></span>
+                    <span class="microbe microbe-b"><i></i><i></i></span>
+                    <span class="microbe microbe-c"><i></i><i></i><i></i></span>
+                    <span class="speck speck-a"></span>
+                    <span class="speck speck-b"></span>
+                    <span class="speck speck-c"></span>
+                  </div>
+                  <div class="placeholder-copy">
+                    <span class="scope-icon" aria-hidden="true">⌕</span>
+                    <strong>Your tiny universe<br />will appear here</strong>
+                    <small>Make sure the microscope is plugged in first.</small>
+                  </div>
+                </div>
+
+                <div class="focus-guides" id="focusGuides" aria-hidden="true">
+                  <span class="guide-horizontal"></span>
+                  <span class="guide-vertical"></span>
+                  <span class="guide-ring"></span>
+                </div>
+
+                <div class="stage-badge stage-badge-left" id="zoomReadout">1.0×</div>
+                <div class="stage-badge stage-badge-right" id="resolutionReadout">READY TO EXPLORE</div>
+              </div>
+
+              <div class="main-controls">
+                <button class="button button-connect" id="connectButton" type="button">
+                  <span class="button-icon" aria-hidden="true">⏻</span>
+                  <span id="connectButtonText">Power up microscope</span>
+                </button>
+                <button class="button button-capture" id="captureButton" type="button" disabled>
+                  <span class="button-icon capture-dot" aria-hidden="true"></span>
+                  Snap discovery
+                </button>
+                <button
+                  class="icon-button"
+                  id="fullscreenButton"
+                  type="button"
+                  aria-label="Open microscope view fullscreen"
+                  title="Fullscreen view"
+                  disabled
+                >
+                  <span aria-hidden="true">⛶</span>
+                </button>
+              </div>
+
+              <div class="viewer-tools">
+                <div class="tool-group zoom-tool">
+                  <div class="tool-label-row">
+                    <label for="zoomSlider"><span aria-hidden="true">＋</span> Digital zoom</label>
+                    <output id="zoomOutput" for="zoomSlider">1.0×</output>
+                  </div>
+                  <input
+                    id="zoomSlider"
+                    type="range"
+                    min="1"
+                    max="4"
+                    value="1"
+                    step="0.1"
+                    aria-describedby="zoomTip"
+                  />
+                  <small id="zoomTip">Move closer with the lens first for the sharpest image.</small>
+                </div>
+
+                <div class="tool-group filter-tool">
+                  <span class="tool-label"><span aria-hidden="true">◐</span> Viewing filter</span>
+                  <div class="filter-buttons" role="group" aria-label="Viewing filter">
+                    <button type="button" class="filter-chip active" data-filter="natural" aria-pressed="true">Natural</button>
+                    <button type="button" class="filter-chip" data-filter="contrast" aria-pressed="false">Contrast +</button>
+                    <button type="button" class="filter-chip" data-filter="mono" aria-pressed="false">B&amp;W</button>
+                    <button type="button" class="filter-chip" data-filter="invert" aria-pressed="false">Invert</button>
+                  </div>
+                  <small>Filters change the view, not the specimen.</small>
+                </div>
+              </div>
+            </article>
+
+            <aside class="quest-card" aria-labelledby="quest-heading">
+              <div class="quest-card-top">
+                <div>
+                  <p class="quest-kicker">TODAY'S FIELD QUEST</p>
+                  <h2 id="quest-heading">Leaf detective</h2>
+                </div>
+                <span class="quest-icon" id="questIcon" aria-hidden="true">🍃</span>
+              </div>
+
+              <div class="active-quest">
+                <span class="quest-tag" id="questTag">PLANT POWER</span>
+                <p id="questPrompt">Can you find the tiny doors that help a leaf breathe?</p>
+                <div class="quest-question">
+                  <span aria-hidden="true">?</span>
+                  <p><strong>Wonder question</strong><span id="wonderQuestion">Are all the cells the same shape?</span></p>
+                </div>
+              </div>
+
+              <div class="quest-picker">
+                <p>Choose another mission</p>
+                <div class="mission-list" role="list">
+                  <button class="mission active" type="button" data-mission="leaf" aria-pressed="true">
+                    <span aria-hidden="true">🍃</span><span><strong>Leaf detective</strong><small>Plants</small></span><i>→</i>
+                  </button>
+                  <button class="mission" type="button" data-mission="fabric" aria-pressed="false">
+                    <span aria-hidden="true">🧵</span><span><strong>Fabric finder</strong><small>Materials</small></span><i>→</i>
+                  </button>
+                  <button class="mission" type="button" data-mission="crumb" aria-pressed="false">
+                    <span aria-hidden="true">🥨</span><span><strong>Mystery crumb</strong><small>Food science</small></span><i>→</i>
+                  </button>
+                  <button class="mission" type="button" data-mission="water" aria-pressed="false">
+                    <span aria-hidden="true">💧</span><span><strong>Pond patrol</strong><small>Micro life</small></span><i>→</i>
+                  </button>
+                </div>
+              </div>
+
+              <div class="notebook">
+                <label for="observationNote"><span aria-hidden="true">✎</span> Field note</label>
+                <textarea
+                  id="observationNote"
+                  rows="3"
+                  maxlength="180"
+                  placeholder="I notice… I wonder…"
+                ></textarea>
+                <div class="notebook-actions">
+                  <small><span id="noteCount">0</span>/180</small>
+                  <button type="button" id="saveNoteButton">Save note</button>
+                </div>
+              </div>
+
+              <button class="complete-button" id="completeQuestButton" type="button">
+                <span aria-hidden="true">✓</span> Mark quest complete
+              </button>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="discoveries shell" aria-labelledby="discoveries-heading">
+        <div class="discoveries-header">
+          <div>
+            <p class="eyebrow dark"><span aria-hidden="true">✦</span> Discovery reel</p>
+            <h2 id="discoveries-heading">Your tiny-world snapshots</h2>
+          </div>
+          <button class="text-button" id="clearSnapshotsButton" type="button" hidden>Clear all</button>
+        </div>
+
+        <div class="snapshot-grid" id="snapshotGrid">
+          <div class="snapshot-empty" id="snapshotEmpty">
+            <span aria-hidden="true">◎</span>
+            <div><strong>No discoveries yet</strong><p>Your microscope snapshots will land here.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="field-guide shell" aria-labelledby="field-guide-heading">
+        <div class="guide-intro">
+          <p class="eyebrow dark"><span aria-hidden="true">⌁</span> Grown-up field guide</p>
+          <h2 id="field-guide-heading">Ready on your device?</h2>
+          <p>This explorer works best with microscopes labelled <strong>UVC</strong> or “plug and play.”</p>
+        </div>
+
+        <div class="device-grid">
+          <article>
+            <span aria-hidden="true">💻</span>
+            <h3>Mac + Windows</h3>
+            <p>Usually ready to go with a UVC microscope and a modern browser.</p>
+            <span class="support-tag yes">Best support</span>
+          </article>
+          <article>
+            <span aria-hidden="true">▣</span>
+            <h3>Android</h3>
+            <p>Works on devices that support USB host mode and external cameras.</p>
+            <span class="support-tag maybe">Device check</span>
+          </article>
+          <article>
+            <span aria-hidden="true">◫</span>
+            <h3>USB-C iPad</h3>
+            <p>Supported on iPadOS 17 or newer with a UVC camera.</p>
+            <span class="support-tag yes">Supported</span>
+          </article>
+          <article>
+            <span aria-hidden="true">▯</span>
+            <h3>iPhone</h3>
+            <p>Built-in cameras work, but direct USB microscope video is not supported.</p>
+            <span class="support-tag no">Needs a bridge</span>
+          </article>
+        </div>
+
+        <details class="help-panel">
+          <summary><span aria-hidden="true">🛠️</span> Microscope not showing up?</summary>
+          <div class="help-content">
+            <ol>
+              <li>Check that the microscope is switched on and firmly connected.</li>
+              <li>Choose <strong>Allow</strong> when the browser asks to use the camera.</li>
+              <li>Open the camera menu above and choose the USB or microscope camera.</li>
+              <li>If it needs more power, try a powered USB hub.</li>
+              <li>Close other apps that may already be using the microscope.</li>
+            </ol>
+            <p>This page processes video on your device. It does not upload your camera feed.</p>
+          </div>
+        </details>
+      </section>
+    </main>
+
+    <footer>
+      <div class="shell footer-inner">
+        <div class="footer-brand"><span aria-hidden="true">⌕</span><strong>Stay curious.</strong></div>
+        <p>Built for careful hands, bright minds, and very tiny things.</p>
+      </div>
+    </footer>
+
+    <canvas id="captureCanvas" hidden></canvas>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="confetti-layer" id="confettiLayer" aria-hidden="true"></div>
+
+    <script src="./app.js" defer></script>
+  </body>
+</html>
