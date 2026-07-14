@@ -31,6 +31,10 @@ const state = {
   zoom: 1,
   autoEnhance: false,
   autoEnhanceFilter: "none",
+  revealDetails: false,
+  cleanView: false,
+  processingFrame: null,
+  processingLastSample: 0,
   edgeHighlight: false,
   edgeIntensity: 0.6,
   edgeFrame: null,
@@ -68,11 +72,15 @@ const zoomOutput = $("#zoomOutput");
 const zoomReadout = $("#zoomReadout");
 const focusHelperButton = $("#focusHelperButton");
 const autoEnhanceButton = $("#autoEnhanceButton");
+const revealDetailsButton = $("#revealDetailsButton");
+const cleanViewButton = $("#cleanViewButton");
 const edgeHighlightButton = $("#edgeHighlightButton");
 const edgeIntensityControl = $("#edgeIntensityControl");
 const edgeIntensity = $("#edgeIntensity");
 const edgeOverlay = $("#edgeOverlay");
 const edgeOverlayContext = edgeOverlay.getContext("2d");
+const processingOverlay = $("#processingOverlay");
+const processingOverlayContext = processingOverlay.getContext("2d", { willReadFrequently: true });
 const focusHelperPanel = $("#focusHelperPanel");
 const focusStatus = $("#focusStatus");
 const focusMeterFill = $("#focusMeterFill");
@@ -293,6 +301,8 @@ async function connectCamera(deviceId = "") {
     fullscreenButton.disabled = false;
     focusHelperButton.disabled = false;
     autoEnhanceButton.disabled = false;
+    revealDetailsButton.disabled = false;
+    cleanViewButton.disabled = false;
     edgeHighlightButton.disabled = false;
     assistTip.textContent = "Focus guidance and enhancement are optional and reversible.";
     connectButtonText.textContent = "Reconnect microscope";
@@ -349,6 +359,205 @@ function activeVideoFilter() {
 
 function applyVideoProcessing() {
   video.style.filter = activeVideoFilter();
+}
+
+function clampByte(value) {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function luminanceAt(data, offset) {
+  return (data[offset] * 0.299) + (data[offset + 1] * 0.587) + (data[offset + 2] * 0.114);
+}
+
+function revealLocalDetails(imageData) {
+  const { width, height, data } = imageData;
+  const columns = 6;
+  const rows = 4;
+  const tiles = [];
+
+  for (let tileY = 0; tileY < rows; tileY += 1) {
+    for (let tileX = 0; tileX < columns; tileX += 1) {
+      const histogram = new Uint32Array(64);
+      const left = Math.floor((tileX * width) / columns);
+      const right = Math.floor(((tileX + 1) * width) / columns);
+      const top = Math.floor((tileY * height) / rows);
+      const bottom = Math.floor(((tileY + 1) * height) / rows);
+      let samples = 0;
+
+      for (let y = top; y < bottom; y += 2) {
+        for (let x = left; x < right; x += 2) {
+          const value = luminanceAt(data, ((y * width) + x) * 4);
+          histogram[Math.min(63, Math.floor(value / 4))] += 1;
+          samples += 1;
+        }
+      }
+
+      const percentile = (fraction) => {
+        const target = samples * fraction;
+        let count = 0;
+        for (let bin = 0; bin < histogram.length; bin += 1) {
+          count += histogram[bin];
+          if (count >= target) return (bin * 4) + 2;
+        }
+        return 255;
+      };
+      const low = percentile(0.08);
+      const high = percentile(0.92);
+      const factor = Math.max(1, Math.min(1.32, 185 / Math.max(42, high - low)));
+      const offset = Math.max(-24, Math.min(24, 128 - (factor * ((low + high) / 2))));
+      tiles.push({ factor, offset });
+    }
+  }
+
+  const tile = (x, y) => tiles[(y * columns) + x];
+  for (let y = 0; y < height; y += 1) {
+    const gridY = ((y + 0.5) * rows / height) - 0.5;
+    const y0 = Math.max(0, Math.min(rows - 1, Math.floor(gridY)));
+    const y1 = Math.min(rows - 1, y0 + 1);
+    const mixY = Math.max(0, Math.min(1, gridY - y0));
+    for (let x = 0; x < width; x += 1) {
+      const gridX = ((x + 0.5) * columns / width) - 0.5;
+      const x0 = Math.max(0, Math.min(columns - 1, Math.floor(gridX)));
+      const x1 = Math.min(columns - 1, x0 + 1);
+      const mixX = Math.max(0, Math.min(1, gridX - x0));
+      const topFactor = (tile(x0, y0).factor * (1 - mixX)) + (tile(x1, y0).factor * mixX);
+      const bottomFactor = (tile(x0, y1).factor * (1 - mixX)) + (tile(x1, y1).factor * mixX);
+      const topOffset = (tile(x0, y0).offset * (1 - mixX)) + (tile(x1, y0).offset * mixX);
+      const bottomOffset = (tile(x0, y1).offset * (1 - mixX)) + (tile(x1, y1).offset * mixX);
+      const factor = (topFactor * (1 - mixY)) + (bottomFactor * mixY);
+      const offset = (topOffset * (1 - mixY)) + (bottomOffset * mixY);
+      const index = ((y * width) + x) * 4;
+      const adjustment = clampByte((luminanceAt(data, index) * factor) + offset) - luminanceAt(data, index);
+      data[index] = clampByte(data[index] + adjustment);
+      data[index + 1] = clampByte(data[index + 1] + adjustment);
+      data[index + 2] = clampByte(data[index + 2] + adjustment);
+    }
+  }
+}
+
+function cleanSensorNoise(imageData) {
+  const { width, height, data } = imageData;
+  const original = new Uint8ClampedArray(data);
+  const neighbours = [-1, 0, 1];
+
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = ((y * width) + x) * 4;
+      const centreLuminance = luminanceAt(original, index);
+      let count = 0;
+      let red = 0;
+      let green = 0;
+      let blue = 0;
+      for (const yOffset of neighbours) {
+        for (const xOffset of neighbours) {
+          const neighbourIndex = (((y + yOffset) * width) + x + xOffset) * 4;
+          if (Math.abs(luminanceAt(original, neighbourIndex) - centreLuminance) > 24) continue;
+          red += original[neighbourIndex];
+          green += original[neighbourIndex + 1];
+          blue += original[neighbourIndex + 2];
+          count += 1;
+        }
+      }
+      if (count < 2) continue;
+      data[index] = clampByte((original[index] * 0.58) + ((red / count) * 0.42));
+      data[index + 1] = clampByte((original[index + 1] * 0.58) + ((green / count) * 0.42));
+      data[index + 2] = clampByte((original[index + 2] * 0.58) + ((blue / count) * 0.42));
+    }
+  }
+}
+
+function applyOptionalViewProcessing(imageData) {
+  if (state.revealDetails) revealLocalDetails(imageData);
+  if (state.cleanView) cleanSensorNoise(imageData);
+}
+
+function renderProcessingView() {
+  const stage = $("#stage");
+  if (!stage.clientWidth || !stage.clientHeight || !video.videoWidth || !video.videoHeight) return;
+  const aspect = stage.clientWidth / stage.clientHeight;
+  let height = Math.min(280, Math.max(160, Math.round(stage.clientHeight * 0.45)));
+  let width = Math.round(height * aspect);
+  if (width > 460) {
+    width = 460;
+    height = Math.round(width / aspect);
+  }
+  if (processingOverlay.width !== width || processingOverlay.height !== height) {
+    processingOverlay.width = width;
+    processingOverlay.height = height;
+  }
+  const crop = visibleVideoCrop(width / height);
+  processingOverlayContext.filter = activeVideoFilter();
+  processingOverlayContext.drawImage(video, crop.x, crop.y, crop.width, crop.height, 0, 0, width, height);
+  processingOverlayContext.filter = "none";
+  const imageData = processingOverlayContext.getImageData(0, 0, width, height);
+  applyOptionalViewProcessing(imageData);
+  processingOverlayContext.putImageData(imageData, 0, 0);
+}
+
+function processingLoop(timestamp) {
+  if (!state.revealDetails && !state.cleanView) return;
+  state.processingFrame = window.requestAnimationFrame(processingLoop);
+  if (timestamp - state.processingLastSample < 100) return;
+  state.processingLastSample = timestamp;
+  try {
+    renderProcessingView();
+  } catch {
+    state.revealDetails = false;
+    state.cleanView = false;
+    revealDetailsButton.setAttribute("aria-pressed", "false");
+    cleanViewButton.setAttribute("aria-pressed", "false");
+    stopOptionalViewProcessing();
+    showToast("That live enhancement could not process this camera view.");
+  }
+}
+
+function startOptionalViewProcessing() {
+  viewerCard.classList.add("processing-view-active");
+  processingOverlay.hidden = false;
+  state.processingLastSample = 0;
+  if (state.processingFrame === null) state.processingFrame = window.requestAnimationFrame(processingLoop);
+}
+
+function stopOptionalViewProcessing() {
+  if (state.processingFrame !== null) window.cancelAnimationFrame(state.processingFrame);
+  state.processingFrame = null;
+  viewerCard.classList.remove("processing-view-active");
+  processingOverlay.hidden = true;
+  processingOverlayContext.clearRect(0, 0, processingOverlay.width, processingOverlay.height);
+}
+
+function toggleRevealDetails() {
+  if (!cameraIsLive()) {
+    showToast("Power up the microscope before revealing details.");
+    return;
+  }
+  state.revealDetails = !state.revealDetails;
+  revealDetailsButton.setAttribute("aria-pressed", String(state.revealDetails));
+  if (state.revealDetails) {
+    startOptionalViewProcessing();
+    assistTip.textContent = "Gentle local contrast is revealing faint patterns in the live view.";
+    showToast("Reveal details is on. Turn it off anytime to return to the regular view.");
+  } else {
+    if (!state.cleanView) stopOptionalViewProcessing();
+    assistTip.textContent = "Reveal details is off. The regular camera view is restored.";
+  }
+}
+
+function toggleCleanView() {
+  if (!cameraIsLive()) {
+    showToast("Power up the microscope before cleaning the view.");
+    return;
+  }
+  state.cleanView = !state.cleanView;
+  cleanViewButton.setAttribute("aria-pressed", String(state.cleanView));
+  if (state.cleanView) {
+    startOptionalViewProcessing();
+    assistTip.textContent = "Light noise reduction is calming grain in the live view.";
+    showToast("Clean view is on. Fine texture is kept as gently as possible.");
+  } else {
+    if (!state.revealDetails) stopOptionalViewProcessing();
+    assistTip.textContent = "Clean view is off. The regular camera view is restored.";
+  }
 }
 
 function selectFilter(name) {
@@ -729,11 +938,18 @@ function applyCaptureEdges(targetContext, crop, width, height) {
 function resetProcessingTools() {
   stopFocusHelper();
   stopEdgeHighlight();
+  state.revealDetails = false;
+  state.cleanView = false;
+  stopOptionalViewProcessing();
   state.autoEnhance = false;
   state.autoEnhanceFilter = "none";
   autoEnhanceButton.setAttribute("aria-pressed", "false");
+  revealDetailsButton.setAttribute("aria-pressed", "false");
+  cleanViewButton.setAttribute("aria-pressed", "false");
   focusHelperButton.disabled = true;
   autoEnhanceButton.disabled = true;
+  revealDetailsButton.disabled = true;
+  cleanViewButton.disabled = true;
   edgeHighlightButton.disabled = true;
   assistTip.textContent = "Connect the microscope to use discovery helpers.";
   applyVideoProcessing();
@@ -772,6 +988,10 @@ async function captureDiscovery() {
     outputWidth,
     outputHeight,
   );
+  context.filter = "none";
+  const capturedImageData = context.getImageData(0, 0, outputWidth, outputHeight);
+  applyOptionalViewProcessing(capturedImageData);
+  context.putImageData(capturedImageData, 0, 0);
   if (state.edgeHighlight) {
     applyCaptureEdges(
       context,
@@ -796,6 +1016,8 @@ async function captureDiscovery() {
     enhancements: [
       ...(videoFilterLabels[state.filter] ? [videoFilterLabels[state.filter]] : []),
       ...(state.autoEnhance ? ["Auto enhanced"] : []),
+      ...(state.revealDetails ? ["Reveal details"] : []),
+      ...(state.cleanView ? ["Clean view"] : []),
       ...(state.edgeHighlight ? ["Edge highlight"] : []),
     ],
   };
@@ -1469,6 +1691,8 @@ document.addEventListener("webkitfullscreenchange", updateFullscreenControls);
 zoomSlider.addEventListener("input", (event) => setZoom(event.target.value));
 focusHelperButton.addEventListener("click", toggleFocusHelper);
 autoEnhanceButton.addEventListener("click", toggleAutoEnhance);
+revealDetailsButton.addEventListener("click", toggleRevealDetails);
+cleanViewButton.addEventListener("click", toggleCleanView);
 edgeHighlightButton.addEventListener("click", toggleEdgeHighlight);
 edgeIntensity.addEventListener("input", (event) => {
   state.edgeIntensity = Number(event.target.value);

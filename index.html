@@ -119,6 +119,7 @@
 
               <div class="stage" id="stage">
                 <video id="microscopeVideo" autoplay muted playsinline aria-label="Live microscope video"></video>
+                <canvas class="processing-overlay" id="processingOverlay" aria-hidden="true" hidden></canvas>
                 <canvas class="edge-overlay" id="edgeOverlay" aria-hidden="true" hidden></canvas>
 
                 <div class="stage-placeholder" id="stagePlaceholder">
@@ -213,6 +214,12 @@
                     </button>
                     <button type="button" class="assist-toggle" id="autoEnhanceButton" aria-pressed="false" disabled>
                       <span aria-hidden="true">✨</span> Auto enhance
+                    </button>
+                    <button type="button" class="assist-toggle" id="revealDetailsButton" aria-pressed="false" disabled>
+                      <span aria-hidden="true">◌</span> Reveal details
+                    </button>
+                    <button type="button" class="assist-toggle" id="cleanViewButton" aria-pressed="false" disabled>
+                      <span aria-hidden="true">✧</span> Clean view
                     </button>
                     <button type="button" class="assist-toggle" id="edgeHighlightButton" aria-pressed="false" disabled>
                       <span aria-hidden="true">≋</span> Edge explorer
