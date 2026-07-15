@@ -197,33 +197,6 @@ async function populateCameraList(preferredId) {
   if (activeId && cameras.some((camera) => camera.deviceId === activeId)) {
     cameraSelect.value = activeId;
   }
-
-  return cameras;
-}
-
-async function discoverCameras() {
-  let discoveryStream;
-
-  try {
-    // A minimal first request unlocks complete camera labels and IDs on Android.
-    // Stop it immediately; the chosen camera is opened below with its exact ID.
-    discoveryStream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: false,
-    });
-
-    const discoveredId = discoveryStream.getVideoTracks()[0]?.getSettings()?.deviceId || "";
-    discoveryStream.getTracks().forEach((track) => track.stop());
-    discoveryStream = null;
-
-    // Give Android a moment to release a UVC device before opening it again.
-    await new Promise((resolve) => window.setTimeout(resolve, 150));
-
-    const cameras = await populateCameraList(discoveredId);
-    return { cameras, discoveredId };
-  } finally {
-    discoveryStream?.getTracks().forEach((track) => track.stop());
-  }
 }
 
 async function applyAdvancedTrackSetting(track, setting) {
@@ -317,37 +290,19 @@ async function connectCamera(deviceId = "") {
 
   stopStream();
 
-  let selectedDeviceId = deviceId;
+  const videoConstraints = {
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+    frameRate: { ideal: 30 },
+  };
+
+  if (deviceId) {
+    videoConstraints.deviceId = { exact: deviceId };
+  } else {
+    videoConstraints.facingMode = { ideal: "environment" };
+  }
 
   try {
-    if (!selectedDeviceId) {
-      setConnection("working", "Discovering cameras…");
-      connectButtonText.textContent = "Discovering cameras…";
-
-      const { cameras, discoveredId } = await discoverCameras();
-      const likelyMicroscope = cameras.find((device) =>
-        /microscope|endoscope|usb|uvc|scope/i.test(device.label),
-      );
-
-      selectedDeviceId = likelyMicroscope?.deviceId
-        || discoveredId
-        || cameras[0]?.deviceId
-        || "";
-
-      if (!selectedDeviceId) {
-        const error = new Error("No video input was discovered.");
-        error.name = "NotFoundError";
-        throw error;
-      }
-    }
-
-    const videoConstraints = {
-      deviceId: { exact: selectedDeviceId },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-      frameRate: { ideal: 30 },
-    };
-
     state.stream = await navigator.mediaDevices.getUserMedia({
       video: videoConstraints,
       audio: false,
@@ -355,6 +310,17 @@ async function connectCamera(deviceId = "") {
 
     const track = state.stream.getVideoTracks()[0];
     let settings = track.getSettings();
+
+    if (!deviceId) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const likelyMicroscope = devices.find((device) =>
+        device.kind === "videoinput" && /microscope|usb|uvc|scope/i.test(device.label),
+      );
+      if (likelyMicroscope && likelyMicroscope.deviceId !== settings.deviceId) {
+        await connectCamera(likelyMicroscope.deviceId);
+        return;
+      }
+    }
 
     setConnection("working", "Finding sharpest view…");
     connectButtonText.textContent = "Finding sharpest view…";
