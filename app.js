@@ -14,6 +14,8 @@ const videoFilterLabels = {
 };
 
 const organizerStorageKey = "microexplorer-organizer";
+const isAndroidDevice = navigator.userAgentData?.platform === "Android"
+  || /Android/i.test(navigator.userAgent);
 
 const qualityProfiles = [
   { width: 2560, height: 1440 },
@@ -272,6 +274,12 @@ async function optimiseCameraQuality(track) {
 }
 
 async function connectCamera(deviceId = "") {
+  if (isAndroidDevice) {
+    setConnection("error", "Android unsupported");
+    showToast("USB microscopes currently require a desktop browser.");
+    return;
+  }
+
   if (!window.isSecureContext) {
     setConnection("error", "HTTPS needed");
     showToast("Publish with GitHub Pages HTTPS before connecting a camera.");
@@ -1705,7 +1713,14 @@ configureEventLink();
 setZoom(1);
 selectFilter("natural");
 
-if (!window.isSecureContext) {
+if (isAndroidDevice) {
+  setConnection("error", "Android unsupported");
+  connectButton.disabled = true;
+  connectButtonText.textContent = "Use a desktop browser";
+  cameraSelect.disabled = true;
+  resolutionReadout.textContent = "ANDROID UNSUPPORTED";
+  assistTip.textContent = "USB microscopes are currently supported on desktop browsers only.";
+} else if (!window.isSecureContext) {
   setConnection("error", "Preview only");
   connectionText.textContent = "Publish with HTTPS";
 } else if (!navigator.mediaDevices?.getUserMedia) {
