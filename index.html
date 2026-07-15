@@ -64,6 +64,15 @@
     </header>
 
     <main id="top">
+      <section class="event-banner shell" id="eventBanner" aria-label="Event banner" hidden>
+        <div class="event-banner-frame">
+          <img id="eventBannerImage" alt="Event banner" crossorigin="anonymous" referrerpolicy="no-referrer" />
+          <p class="event-presenter" id="eventPresenter" hidden>
+            Presented by <strong id="eventPresenterName"></strong>
+          </p>
+        </div>
+      </section>
+
       <section class="hero shell" aria-labelledby="hero-title">
         <div class="hero-copy">
           <p class="eyebrow"><span aria-hidden="true">✺</span> Your pocket-sized discovery lab</p>
@@ -377,7 +386,7 @@
         </label>
 
         <div class="organizer-privacy">
-          <small>The explorer name is never saved. The organizer remains for this tab; choose remember to keep it on this device.</small>
+          <small id="organizerPrivacyText">The explorer name is never saved. The organizer remains for this tab; choose remember to keep it on this device.</small>
           <button id="forgetOrganizerButton" type="button" hidden>Forget organizer</button>
         </div>
 

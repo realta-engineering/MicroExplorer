@@ -44,6 +44,8 @@ const state = {
   focusMin: Infinity,
   explorerName: "",
   organizerName: "",
+  eventBannerUrl: "",
+  eventOrganizerName: "",
   snapshots: [],
   pendingSnapshot: null,
   toastTimer: null,
@@ -53,6 +55,10 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 const viewerCard = $("#viewerCard");
+const eventBanner = $("#eventBanner");
+const eventBannerImage = $("#eventBannerImage");
+const eventPresenter = $("#eventPresenter");
+const eventPresenterName = $("#eventPresenterName");
 const video = $("#microscopeVideo");
 const cameraSelect = $("#cameraSelect");
 const connectButton = $("#connectButton");
@@ -91,8 +97,49 @@ const exportForm = $("#exportForm");
 const exportExplorerName = $("#exportExplorerName");
 const exportOrganizerName = $("#exportOrganizerName");
 const rememberOrganizer = $("#rememberOrganizer");
+const rememberOrganizerLabel = $(".remember-organizer");
+const organizerPrivacyText = $("#organizerPrivacyText");
 const forgetOrganizerButton = $("#forgetOrganizerButton");
 const toast = $("#toast");
+
+function normalizedEventName(value) {
+  return (value || "").trim().replace(/\s+/g, " ").slice(0, 80);
+}
+
+function normalizedBannerUrl(value) {
+  if (!value || value.length > 2048) return "";
+  try {
+    const url = new URL(value, window.location.href);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function configureEventLink() {
+  const parameters = new URLSearchParams(window.location.search);
+  state.eventOrganizerName = normalizedEventName(parameters.get("presentedBy"));
+  state.eventBannerUrl = normalizedBannerUrl(parameters.get("banner"));
+
+  if (state.eventOrganizerName) {
+    state.organizerName = state.eventOrganizerName;
+    eventPresenterName.textContent = state.eventOrganizerName;
+    eventPresenter.hidden = false;
+  }
+
+  if (!state.eventBannerUrl) return;
+  eventBannerImage.addEventListener("load", () => {
+    eventBanner.hidden = false;
+    document.body.classList.add("has-event-banner");
+  }, { once: true });
+  eventBannerImage.addEventListener("error", () => {
+    state.eventBannerUrl = "";
+    eventBanner.hidden = true;
+    document.body.classList.remove("has-event-banner");
+    showToast("The event banner could not load. MicroExplorer is still ready.");
+  }, { once: true });
+  eventBannerImage.src = state.eventBannerUrl;
+}
 const analysisCanvas = document.createElement("canvas");
 analysisCanvas.width = 160;
 analysisCanvas.height = 120;
@@ -948,6 +995,17 @@ function loadSnapshotImage(url) {
   });
 }
 
+function loadEventBannerImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.referrerPolicy = "no-referrer";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Event banner could not be loaded"));
+    image.src = url;
+  });
+}
+
 function drawImageCover(context, image, x, y, width, height) {
   const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
   const sourceWidth = width / scale;
@@ -1032,7 +1090,7 @@ function canvasAsJpeg(canvas) {
   });
 }
 
-async function renderDiscoveryPdfPage(snapshots, pageIndex, pageCount, explorerName) {
+async function renderDiscoveryPdfPage(snapshots, pageIndex, pageCount, explorerName, discoveryOffset) {
   const canvasPage = document.createElement("canvas");
   canvasPage.width = 1240;
   canvasPage.height = 1754;
@@ -1074,7 +1132,7 @@ async function renderDiscoveryPdfPage(snapshots, pageIndex, pageCount, explorerN
   );
 
   for (let index = 0; index < snapshots.length; index += 1) {
-    await drawDiscoveryCard(context, snapshots[index], (pageIndex * 2) + index + 1, 270 + (index * 625));
+    await drawDiscoveryCard(context, snapshots[index], discoveryOffset + index + 1, 270 + (index * 625));
   }
 
   context.fillStyle = "#718095";
@@ -1082,6 +1140,67 @@ async function renderDiscoveryPdfPage(snapshots, pageIndex, pageCount, explorerN
   context.fillText("Look closely. Stay curious.", 90, 1690);
   context.textAlign = "right";
   context.fillText(`Page ${pageIndex + 1} of ${pageCount}`, 1150, 1690);
+  context.textAlign = "left";
+
+  const jpegBlob = await canvasAsJpeg(canvasPage);
+  return new Uint8Array(await jpegBlob.arrayBuffer());
+}
+
+async function renderEventCoverPdfPage(bannerImage, explorerName, organizerName, pageCount) {
+  const canvasPage = document.createElement("canvas");
+  canvasPage.width = 1240;
+  canvasPage.height = 1754;
+  const context = canvasPage.getContext("2d", { alpha: false });
+
+  context.fillStyle = "#f6f1e7";
+  context.fillRect(0, 0, canvasPage.width, canvasPage.height);
+  context.fillStyle = "#071b33";
+  context.fillRect(0, 0, canvasPage.width, 92);
+  context.fillStyle = "#5ff2d6";
+  context.font = '800 19px "Arial", sans-serif';
+  context.fillText("MICROEXPLORER • EVENT DISCOVERY REEL", 70, 57);
+
+  context.save();
+  roundedRectPath(context, 70, 132, 1100, 550, 28);
+  context.clip();
+  drawImageCover(context, bannerImage, 70, 132, 1100, 550);
+  context.restore();
+
+  context.textAlign = "center";
+  context.fillStyle = "#7657ff";
+  context.font = '800 22px "Arial", sans-serif';
+  context.fillText("TINY-WORLD DISCOVERIES", 620, 830);
+  context.fillStyle = "#071b33";
+  context.font = '800 62px "Arial", sans-serif';
+  context.fillText("Discovery Reel", 620, 920);
+
+  context.fillStyle = "#718095";
+  context.font = '700 21px "Arial", sans-serif';
+  context.fillText("EXPLORER", 620, 1030);
+  context.fillStyle = "#071b33";
+  fittedCanvasFont(context, explorerName, 940, 68, 38, 800);
+  context.fillText(explorerName, 620, 1110);
+
+  context.fillStyle = "#718095";
+  context.font = '700 19px "Arial", sans-serif';
+  context.fillText("PRESENTED BY", 620, 1220);
+  context.fillStyle = "#071b33";
+  fittedCanvasFont(context, organizerName, 900, 40, 25, 800);
+  context.fillText(organizerName, 620, 1280);
+
+  context.fillStyle = "#fff7db";
+  roundedRectPath(context, 245, 1380, 750, 112, 24);
+  context.fill();
+  context.fillStyle = "#716333";
+  context.font = '700 22px "Arial", sans-serif';
+  context.fillText("Look closely. Discover something wonderful.", 620, 1448);
+
+  context.textAlign = "left";
+  context.fillStyle = "#718095";
+  context.font = '600 17px "Arial", sans-serif';
+  context.fillText("MicroExplorer Discovery Reel", 90, 1690);
+  context.textAlign = "right";
+  context.fillText(`Page 1 of ${pageCount}`, 1150, 1690);
   context.textAlign = "left";
 
   const jpegBlob = await canvasAsJpeg(canvasPage);
@@ -1345,10 +1464,16 @@ function openExportDialog() {
 
   const rememberedOrganizer = readStoredOrganizer(localStorage);
   const sessionOrganizer = readStoredOrganizer(sessionStorage);
+  const linkedOrganizer = state.eventOrganizerName;
   exportExplorerName.value = "";
-  exportOrganizerName.value = rememberedOrganizer || sessionOrganizer || "";
-  rememberOrganizer.checked = Boolean(rememberedOrganizer);
-  forgetOrganizerButton.hidden = !(rememberedOrganizer || sessionOrganizer);
+  exportOrganizerName.value = linkedOrganizer || rememberedOrganizer || sessionOrganizer || "";
+  exportOrganizerName.readOnly = Boolean(linkedOrganizer);
+  rememberOrganizerLabel.hidden = Boolean(linkedOrganizer);
+  rememberOrganizer.checked = linkedOrganizer ? false : Boolean(rememberedOrganizer);
+  forgetOrganizerButton.hidden = Boolean(linkedOrganizer) || !(rememberedOrganizer || sessionOrganizer);
+  organizerPrivacyText.textContent = linkedOrganizer
+    ? "The organizer is supplied by this event link and will be used on the PDF certificate."
+    : "The explorer name is never saved. The organizer remains for this tab; choose remember to keep it on this device.";
   exportExplorerName.setCustomValidity("");
   exportOrganizerName.setCustomValidity("");
   exportDialog.showModal();
@@ -1377,21 +1502,40 @@ async function generateDiscoveryPdf(explorerName, organizerName) {
     await document.fonts?.ready;
     const snapshots = [...state.snapshots];
     const discoveryPageCount = Math.ceil(snapshots.length / 2);
-    const pageCount = discoveryPageCount + 1;
+    let bannerImage = null;
+    if (state.eventBannerUrl) {
+      try {
+        bannerImage = await loadEventBannerImage(state.eventBannerUrl);
+      } catch {
+        // A remote host can allow display while blocking canvas use; the PDF still exports safely.
+      }
+    }
+    const coverPageCount = bannerImage ? 1 : 0;
+    const pageCount = coverPageCount + discoveryPageCount + 1;
     const jpegPages = [];
+
+    if (bannerImage) {
+      jpegPages.push(await renderEventCoverPdfPage(
+        bannerImage,
+        explorerName,
+        organizerName,
+        pageCount,
+      ));
+    }
 
     for (let pageIndex = 0; pageIndex < discoveryPageCount; pageIndex += 1) {
       jpegPages.push(await renderDiscoveryPdfPage(
         snapshots.slice(pageIndex * 2, (pageIndex * 2) + 2),
-        pageIndex,
+        coverPageCount + pageIndex,
         pageCount,
         explorerName,
+        pageIndex * 2,
       ));
     }
     jpegPages.push(await renderCertificatePdfPage(
       explorerName,
       organizerName,
-      discoveryPageCount,
+      coverPageCount + discoveryPageCount,
       pageCount,
     ));
 
@@ -1501,7 +1645,8 @@ labelDialog.addEventListener("cancel", (event) => {
 exportForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const explorerName = exportExplorerName.value.trim().replace(/\s+/g, " ").slice(0, 60);
-  const organizerName = exportOrganizerName.value.trim().replace(/\s+/g, " ").slice(0, 80);
+  const organizerName = state.eventOrganizerName
+    || exportOrganizerName.value.trim().replace(/\s+/g, " ").slice(0, 80);
   if (!explorerName) {
     exportExplorerName.setCustomValidity("Add the explorer's name first.");
     exportExplorerName.reportValidity();
@@ -1513,10 +1658,12 @@ exportForm.addEventListener("submit", (event) => {
     return;
   }
 
-  writeStoredOrganizer(sessionStorage, organizerName);
-  if (rememberOrganizer.checked) writeStoredOrganizer(localStorage, organizerName);
-  else removeStoredOrganizer(localStorage);
-  forgetOrganizerButton.hidden = false;
+  if (!state.eventOrganizerName) {
+    writeStoredOrganizer(sessionStorage, organizerName);
+    if (rememberOrganizer.checked) writeStoredOrganizer(localStorage, organizerName);
+    else removeStoredOrganizer(localStorage);
+    forgetOrganizerButton.hidden = false;
+  }
   exportDialog.close();
   void generateDiscoveryPdf(explorerName, organizerName);
 });
@@ -1554,6 +1701,7 @@ window.addEventListener("pagehide", () => {
   if (state.pendingSnapshot) URL.revokeObjectURL(state.pendingSnapshot.url);
 });
 
+configureEventLink();
 setZoom(1);
 selectFilter("natural");
 
