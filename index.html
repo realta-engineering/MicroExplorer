@@ -279,8 +279,8 @@
           <article>
             <span aria-hidden="true">▣</span>
             <h3>Android</h3>
-            <p>Works on devices that support USB host mode and external cameras.</p>
-            <span class="support-tag maybe">Device check</span>
+            <p>USB microscope cameras are not supported in the Android browser version.</p>
+            <span class="support-tag no">Unsupported</span>
           </article>
           <article>
             <span aria-hidden="true">◫</span>
@@ -315,7 +315,10 @@
     <footer>
       <div class="shell footer-inner">
         <div class="footer-brand"><span aria-hidden="true">⌕</span><strong>Stay curious.</strong></div>
-        <p>Built for careful hands, bright minds, and very tiny things.</p>
+        <div class="footer-meta">
+          <p>Built for careful hands, bright minds, and very tiny things.</p>
+          <button class="organizer-setup-link" id="openOrganizerSetup" type="button">Organizer setup</button>
+        </div>
       </div>
     </footer>
 
@@ -393,6 +396,65 @@
         <div class="export-actions">
           <button class="export-cancel" id="cancelExportButton" type="button">Cancel</button>
           <button class="export-submit" type="submit">Create certificate PDF</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="setup-dialog" id="organizerSetupDialog" aria-labelledby="organizerSetupTitle">
+      <form class="setup-form" id="organizerSetupForm">
+        <div class="setup-heading">
+          <span aria-hidden="true">⚙</span>
+          <div>
+            <p class="eyebrow dark">For event organizers</p>
+            <h2 id="organizerSetupTitle">Create an event link</h2>
+          </div>
+        </div>
+        <p class="setup-intro">Add a hosted banner and organizer name, then share the generated MicroExplorer link.</p>
+
+        <label for="setupBannerUrl">Banner image URL</label>
+        <input
+          id="setupBannerUrl"
+          name="bannerUrl"
+          type="url"
+          maxlength="2048"
+          placeholder="https://example.com/event-banner.jpg"
+          autocomplete="off"
+          required
+        />
+
+        <label for="setupPresentedBy">Presented by</label>
+        <input
+          id="setupPresentedBy"
+          name="presentedBy"
+          type="text"
+          maxlength="80"
+          placeholder="e.g. Science Centre"
+          autocomplete="organization"
+          required
+        />
+
+        <div class="setup-preview" id="setupPreview" hidden>
+          <img id="setupBannerPreview" alt="Event banner preview" crossorigin="anonymous" referrerpolicy="no-referrer" />
+        </div>
+        <p class="setup-preview-status" id="setupPreviewStatus" role="status" aria-live="polite"></p>
+
+        <label for="setupGeneratedUrl">Generated event link</label>
+        <textarea
+          id="setupGeneratedUrl"
+          rows="3"
+          readonly
+          placeholder="Your event link will appear here"
+          aria-describedby="setupPrivacyNote"
+        ></textarea>
+
+        <p class="setup-privacy" id="setupPrivacyNote">
+          This tool runs locally and does not save these details. The banner URL and organizer name are visible to anyone who receives the generated link.
+        </p>
+
+        <div class="setup-actions">
+          <button class="setup-cancel" id="cancelOrganizerSetup" type="button">Close</button>
+          <button class="setup-generate" type="submit">Generate link</button>
+          <button class="setup-copy" id="copyOrganizerLink" type="button" disabled>Copy link</button>
         </div>
       </form>
     </dialog>

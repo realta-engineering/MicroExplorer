@@ -102,6 +102,15 @@ const rememberOrganizer = $("#rememberOrganizer");
 const rememberOrganizerLabel = $(".remember-organizer");
 const organizerPrivacyText = $("#organizerPrivacyText");
 const forgetOrganizerButton = $("#forgetOrganizerButton");
+const organizerSetupDialog = $("#organizerSetupDialog");
+const organizerSetupForm = $("#organizerSetupForm");
+const setupBannerUrl = $("#setupBannerUrl");
+const setupPresentedBy = $("#setupPresentedBy");
+const setupPreview = $("#setupPreview");
+const setupBannerPreview = $("#setupBannerPreview");
+const setupPreviewStatus = $("#setupPreviewStatus");
+const setupGeneratedUrl = $("#setupGeneratedUrl");
+const copyOrganizerLinkButton = $("#copyOrganizerLink");
 const toast = $("#toast");
 
 function normalizedEventName(value) {
@@ -141,6 +150,86 @@ function configureEventLink() {
     showToast("The event banner could not load. MicroExplorer is still ready.");
   }, { once: true });
   eventBannerImage.src = state.eventBannerUrl;
+}
+
+function clearGeneratedOrganizerLink() {
+  setupGeneratedUrl.value = "";
+  copyOrganizerLinkButton.disabled = true;
+  setupPreview.hidden = true;
+  setupPreviewStatus.textContent = "";
+  setupBannerPreview.removeAttribute("src");
+}
+
+function openOrganizerSetup() {
+  if (!setupBannerUrl.value && state.eventBannerUrl) setupBannerUrl.value = state.eventBannerUrl;
+  if (!setupPresentedBy.value && state.eventOrganizerName) {
+    setupPresentedBy.value = state.eventOrganizerName;
+  }
+  organizerSetupDialog.showModal();
+}
+
+function generateOrganizerLink(event) {
+  event.preventDefault();
+  setupBannerUrl.setCustomValidity("");
+  setupPresentedBy.setCustomValidity("");
+
+  const rawBannerUrl = setupBannerUrl.value.trim();
+  let absoluteBannerUrl = "";
+  try {
+    const candidate = new URL(rawBannerUrl);
+    if (candidate.protocol === "https:" || candidate.protocol === "http:") {
+      absoluteBannerUrl = candidate.href;
+    }
+  } catch {
+    // The field error below explains the required format.
+  }
+
+  if (!absoluteBannerUrl) {
+    setupBannerUrl.setCustomValidity("Enter a complete HTTP or HTTPS image URL.");
+    setupBannerUrl.reportValidity();
+    return;
+  }
+
+  const organizerName = normalizedEventName(setupPresentedBy.value);
+  if (!organizerName) {
+    setupPresentedBy.setCustomValidity("Add the event organizer name.");
+    setupPresentedBy.reportValidity();
+    return;
+  }
+
+  setupBannerUrl.value = absoluteBannerUrl;
+  setupPresentedBy.value = organizerName;
+
+  const eventUrl = new URL(window.location.href);
+  eventUrl.search = "";
+  eventUrl.hash = "";
+  eventUrl.searchParams.set("banner", absoluteBannerUrl);
+  eventUrl.searchParams.set("presentedBy", organizerName);
+  setupGeneratedUrl.value = eventUrl.href;
+  copyOrganizerLinkButton.disabled = false;
+
+  setupPreview.hidden = true;
+  setupPreviewStatus.textContent = "Checking the banner preview…";
+  setupBannerPreview.src = absoluteBannerUrl;
+}
+
+async function copyOrganizerLink() {
+  if (!setupGeneratedUrl.value) return;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(setupGeneratedUrl.value);
+    } else {
+      setupGeneratedUrl.focus();
+      setupGeneratedUrl.select();
+      if (!document.execCommand("copy")) throw new Error("Copy was unavailable.");
+    }
+    showToast("Event link copied.");
+  } catch {
+    setupGeneratedUrl.focus();
+    setupGeneratedUrl.select();
+    showToast("Select and copy the event link manually.");
+  }
 }
 const analysisCanvas = document.createElement("canvas");
 analysisCanvas.width = 160;
@@ -1685,6 +1774,27 @@ $("#cancelExportButton").addEventListener("click", () => {
 });
 exportDialog.addEventListener("cancel", () => {
   exportExplorerName.value = "";
+});
+
+$("#openOrganizerSetup").addEventListener("click", openOrganizerSetup);
+$("#cancelOrganizerSetup").addEventListener("click", () => organizerSetupDialog.close());
+organizerSetupForm.addEventListener("submit", generateOrganizerLink);
+copyOrganizerLinkButton.addEventListener("click", () => void copyOrganizerLink());
+setupBannerUrl.addEventListener("input", () => {
+  setupBannerUrl.setCustomValidity("");
+  clearGeneratedOrganizerLink();
+});
+setupPresentedBy.addEventListener("input", () => {
+  setupPresentedBy.setCustomValidity("");
+  clearGeneratedOrganizerLink();
+});
+setupBannerPreview.addEventListener("load", () => {
+  setupPreview.hidden = false;
+  setupPreviewStatus.textContent = "Banner preview loaded and is ready for the event report.";
+});
+setupBannerPreview.addEventListener("error", () => {
+  setupPreview.hidden = true;
+  setupPreviewStatus.textContent = "This banner could not be loaded with report-safe image access. Try another hosted image URL.";
 });
 
 snapshotGrid.addEventListener("click", (event) => {
